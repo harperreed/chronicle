@@ -4,7 +4,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/harper/chronicle/internal/config"
+	"github.com/harper/chronicle/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -16,9 +20,41 @@ var addCmd = &cobra.Command{
 	Use:   "add [message]",
 	Short: "Add a log entry",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		message := args[0]
-		fmt.Printf("Adding: %s (tags: %v)\n", message, tags)
+
+		// Get database path
+		dataHome := config.GetDataHome()
+		dbPath := filepath.Join(dataHome, "chronicle", "chronicle.db")
+
+		// Open database
+		database, err := db.InitDB(dbPath)
+		if err != nil {
+			return fmt.Errorf("failed to open database: %w", err)
+		}
+		defer database.Close()
+
+		// Get metadata
+		hostname, _ := os.Hostname()
+		username := os.Getenv("USER")
+		workingDir, _ := os.Getwd()
+
+		// Create entry
+		entry := db.Entry{
+			Message:          message,
+			Hostname:         hostname,
+			Username:         username,
+			WorkingDirectory: workingDir,
+			Tags:             tags,
+		}
+
+		id, err := db.CreateEntry(database, entry)
+		if err != nil {
+			return fmt.Errorf("failed to create entry: %w", err)
+		}
+
+		fmt.Printf("Entry created (ID: %d)\n", id)
+		return nil
 	},
 }
 

@@ -35,11 +35,11 @@ func TestAddCommand(t *testing.T) {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if !strings.Contains(output, "test message") {
-			t.Errorf("expected output to contain 'test message', got: %s", output)
+		if !strings.Contains(output, "Entry created") {
+			t.Errorf("expected output to contain 'Entry created', got: %s", output)
 		}
-		if !strings.Contains(output, "work") || !strings.Contains(output, "important") {
-			t.Errorf("expected output to contain tags, got: %s", output)
+		if !strings.Contains(output, "ID:") {
+			t.Errorf("expected output to contain ID, got: %s", output)
 		}
 	})
 
@@ -66,11 +66,11 @@ func TestAddCommand(t *testing.T) {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if !strings.Contains(output, "short form test") {
-			t.Errorf("expected output to contain 'short form test', got: %s", output)
+		if !strings.Contains(output, "Entry created") {
+			t.Errorf("expected output to contain 'Entry created', got: %s", output)
 		}
-		if !strings.Contains(output, "personal") {
-			t.Errorf("expected output to contain 'personal' tag, got: %s", output)
+		if !strings.Contains(output, "ID:") {
+			t.Errorf("expected output to contain ID, got: %s", output)
 		}
 	})
 
@@ -97,11 +97,11 @@ func TestAddCommand(t *testing.T) {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if !strings.Contains(output, "multi tag message") {
-			t.Errorf("expected output to contain message, got: %s", output)
+		if !strings.Contains(output, "Entry created") {
+			t.Errorf("expected output to contain 'Entry created', got: %s", output)
 		}
-		if !strings.Contains(output, "tag1") || !strings.Contains(output, "tag2") || !strings.Contains(output, "tag3") {
-			t.Errorf("expected output to contain all tags, got: %s", output)
+		if !strings.Contains(output, "ID:") {
+			t.Errorf("expected output to contain ID, got: %s", output)
 		}
 	})
 
