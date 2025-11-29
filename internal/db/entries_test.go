@@ -3,6 +3,7 @@
 package db
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -69,5 +70,46 @@ func TestCreateEntry(t *testing.T) {
 
 	if len(gotTags) != 2 || gotTags[0] != "test" || gotTags[1] != "work" {
 		t.Errorf("got tags %v, want [test work]", gotTags)
+	}
+}
+
+func TestListEntries(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	db, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create test entries
+	for i := 0; i < 5; i++ {
+		entry := Entry{
+			Message:          fmt.Sprintf("message %d", i),
+			Hostname:         "testhost",
+			Username:         "testuser",
+			WorkingDirectory: "/test/dir",
+			Tags:             []string{"test"},
+		}
+		_, err := CreateEntry(db, entry)
+		if err != nil {
+			t.Fatalf("CreateEntry failed: %v", err)
+		}
+	}
+
+	// List with limit
+	entries, err := ListEntries(db, 3)
+	if err != nil {
+		t.Fatalf("ListEntries failed: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Errorf("got %d entries, want 3", len(entries))
+	}
+
+	// Verify most recent first
+	if entries[0].Message != "message 4" {
+		t.Errorf("got first message %s, want message 4", entries[0].Message)
 	}
 }

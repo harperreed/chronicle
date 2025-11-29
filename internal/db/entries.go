@@ -53,3 +53,50 @@ func CreateEntry(db *sql.DB, entry Entry) (int64, error) {
 
 	return entryID, nil
 }
+
+// ListEntries returns the most recent entries, limited by limit
+func ListEntries(db *sql.DB, limit int) ([]Entry, error) {
+	query := `
+		SELECT id, timestamp, message, hostname, username, working_directory
+		FROM entries
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []Entry
+	for rows.Next() {
+		var entry Entry
+		err := rows.Scan(&entry.ID, &entry.Timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory)
+		if err != nil {
+			return nil, err
+		}
+
+		// Load tags for this entry
+		tagRows, err := db.Query("SELECT tag FROM tags WHERE entry_id = ? ORDER BY tag", entry.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		var tags []string
+		for tagRows.Next() {
+			var tag string
+			if err := tagRows.Scan(&tag); err != nil {
+				tagRows.Close()
+				return nil, err
+			}
+			tags = append(tags, tag)
+		}
+		tagRows.Close()
+		entry.Tags = tags
+
+		entries = append(entries, entry)
+	}
+
+	return entries, rows.Err()
+}
