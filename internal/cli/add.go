@@ -35,9 +35,18 @@ var addCmd = &cobra.Command{
 		defer database.Close()
 
 		// Get metadata
-		hostname, _ := os.Hostname()
+		hostname, err := os.Hostname()
+		if err != nil {
+			hostname = "unknown"
+		}
 		username := os.Getenv("USER")
-		workingDir, _ := os.Getwd()
+		if username == "" {
+			username = "unknown"
+		}
+		workingDir, err := os.Getwd()
+		if err != nil {
+			workingDir = "unknown"
+		}
 
 		// Create entry
 		entry := db.Entry{
