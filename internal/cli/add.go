@@ -18,9 +18,10 @@ var (
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add [message]",
-	Short: "Add a log entry",
-	Args:  cobra.ExactArgs(1),
+	Use:     "add [message]",
+	Aliases: []string{"a"},
+	Short:   "Add a log entry",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		message := args[0]
 
