@@ -1,4 +1,4 @@
-// ABOUTME: Database connection and initialization
+// ABOUTME: Database connection and initialization. Requires build tag: sqlite_fts5
 // ABOUTME: Handles SQLite setup and schema migration
 package db
 
@@ -21,6 +21,22 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	// Open database
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
+		return nil, err
+	}
+
+	// Enable foreign key constraints
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	// Set performance pragmas
+	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec("PRAGMA synchronous = NORMAL"); err != nil {
+		db.Close()
 		return nil, err
 	}
 
