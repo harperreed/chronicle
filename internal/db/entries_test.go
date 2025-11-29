@@ -113,3 +113,47 @@ func TestListEntries(t *testing.T) {
 		t.Errorf("got first message %s, want message 4", entries[0].Message)
 	}
 }
+
+func TestSearchEntries(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	database, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create test entries
+	entries := []Entry{
+		{Message: "deployed app", Hostname: "host1", Username: "user", WorkingDirectory: "/dir", Tags: []string{"work", "deploy"}},
+		{Message: "fixed bug", Hostname: "host1", Username: "user", WorkingDirectory: "/dir", Tags: []string{"work", "bug"}},
+		{Message: "wrote tests", Hostname: "host1", Username: "user", WorkingDirectory: "/dir", Tags: []string{"test"}},
+	}
+	for _, e := range entries {
+		_, err := CreateEntry(database, e)
+		if err != nil {
+			t.Fatalf("CreateEntry failed: %v", err)
+		}
+	}
+
+	t.Run("search by text", func(t *testing.T) {
+		results, err := SearchEntries(database, SearchParams{Text: "bug"})
+		if err != nil {
+			t.Fatalf("SearchEntries failed: %v", err)
+		}
+		if len(results) != 1 || results[0].Message != "fixed bug" {
+			t.Errorf("got %v, want entry with 'fixed bug'", results)
+		}
+	})
+
+	t.Run("search by tag", func(t *testing.T) {
+		results, err := SearchEntries(database, SearchParams{Tags: []string{"work"}})
+		if err != nil {
+			t.Fatalf("SearchEntries failed: %v", err)
+		}
+		if len(results) != 2 {
+			t.Errorf("got %d results, want 2", len(results))
+		}
+	})
+}
