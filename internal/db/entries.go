@@ -4,6 +4,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -70,35 +71,35 @@ func ListEntries(db *sql.DB, limit int) ([]Entry, error) {
 	defer rows.Close()
 
 	var entries []Entry
+	var entryIDs []int64
 	for rows.Next() {
 		var entry Entry
 		err := rows.Scan(&entry.ID, &entry.Timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory)
 		if err != nil {
 			return nil, err
 		}
+		entries = append(entries, entry)
+		entryIDs = append(entryIDs, entry.ID)
+	}
 
-		// Load tags for this entry
-		tagRows, err := db.Query("SELECT tag FROM tags WHERE entry_id = ? ORDER BY tag", entry.ID)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load all tags in one query instead of N queries
+	if len(entryIDs) > 0 {
+		tags, err := loadTagsForEntries(db, entryIDs)
 		if err != nil {
 			return nil, err
 		}
 
-		var tags []string
-		for tagRows.Next() {
-			var tag string
-			if err := tagRows.Scan(&tag); err != nil {
-				tagRows.Close()
-				return nil, err
-			}
-			tags = append(tags, tag)
+		// Assign tags to entries
+		for i := range entries {
+			entries[i].Tags = tags[entries[i].ID]
 		}
-		tagRows.Close()
-		entry.Tags = tags
-
-		entries = append(entries, entry)
 	}
 
-	return entries, rows.Err()
+	return entries, nil
 }
 
 type SearchParams struct {
@@ -168,33 +169,70 @@ func SearchEntries(db *sql.DB, params SearchParams) ([]Entry, error) {
 	defer rows.Close()
 
 	var entries []Entry
+	var entryIDs []int64
 	for rows.Next() {
 		var entry Entry
 		err := rows.Scan(&entry.ID, &entry.Timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory)
 		if err != nil {
 			return nil, err
 		}
+		entries = append(entries, entry)
+		entryIDs = append(entryIDs, entry.ID)
+	}
 
-		// Load tags
-		tagRows, err := db.Query("SELECT tag FROM tags WHERE entry_id = ? ORDER BY tag", entry.ID)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load all tags in one query instead of N queries
+	if len(entryIDs) > 0 {
+		tags, err := loadTagsForEntries(db, entryIDs)
 		if err != nil {
 			return nil, err
 		}
 
-		var tags []string
-		for tagRows.Next() {
-			var tag string
-			if err := tagRows.Scan(&tag); err != nil {
-				tagRows.Close()
-				return nil, err
-			}
-			tags = append(tags, tag)
+		// Assign tags to entries
+		for i := range entries {
+			entries[i].Tags = tags[entries[i].ID]
 		}
-		tagRows.Close()
-		entry.Tags = tags
-
-		entries = append(entries, entry)
 	}
 
-	return entries, rows.Err()
+	return entries, nil
+}
+
+// loadTagsForEntries loads tags for multiple entries in a single query
+func loadTagsForEntries(db *sql.DB, entryIDs []int64) (map[int64][]string, error) {
+	if len(entryIDs) == 0 {
+		return make(map[int64][]string), nil
+	}
+
+	// Build IN clause with placeholders
+	placeholders := make([]string, len(entryIDs))
+	args := make([]interface{}, len(entryIDs))
+	for i, id := range entryIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := "SELECT entry_id, tag FROM tags WHERE entry_id IN (" +
+		strings.Join(placeholders, ",") + ") ORDER BY entry_id, tag"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Group tags by entry_id
+	tagMap := make(map[int64][]string)
+	for rows.Next() {
+		var entryID int64
+		var tag string
+		if err := rows.Scan(&entryID, &tag); err != nil {
+			return nil, err
+		}
+		tagMap[entryID] = append(tagMap[entryID], tag)
+	}
+
+	return tagMap, rows.Err()
 }
