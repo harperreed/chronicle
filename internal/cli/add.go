@@ -66,13 +66,10 @@ var addCmd = &cobra.Command{
 		}
 
 		// Fetch the specific entry we just created by ID to get its timestamp
-		var timestampStr string
-		err = database.QueryRow("SELECT timestamp FROM entries WHERE id = ?", id).Scan(&timestampStr)
-		if err == nil {
-			// Parse SQLite datetime format
-			if ts, parseErr := time.Parse("2006-01-02 15:04:05", timestampStr); parseErr == nil {
-				entry.Timestamp = ts
-			}
+		err = database.QueryRow("SELECT timestamp FROM entries WHERE id = ?", id).Scan(&entry.Timestamp)
+		if err != nil {
+			// If we can't get timestamp, use current time as fallback
+			entry.Timestamp = time.Now()
 		}
 
 		fmt.Printf("Entry created (ID: %d)\n", id)
