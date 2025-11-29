@@ -5,9 +5,13 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/harper/chronicle/internal/cli"
 )
 
 func main() {
-	fmt.Println("chronicle")
-	os.Exit(0)
+	if err := cli.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
