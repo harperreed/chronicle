@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/db"
@@ -64,10 +65,14 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("failed to create entry: %w", err)
 		}
 
-		// Fetch the created entry to get timestamp
-		entries, err := db.SearchEntries(database, db.SearchParams{Limit: 1})
-		if err == nil && len(entries) > 0 {
-			entry = entries[0]
+		// Fetch the specific entry we just created by ID to get its timestamp
+		var timestampStr string
+		err = database.QueryRow("SELECT timestamp FROM entries WHERE id = ?", id).Scan(&timestampStr)
+		if err == nil {
+			// Parse SQLite datetime format
+			if ts, parseErr := time.Parse("2006-01-02 15:04:05", timestampStr); parseErr == nil {
+				entry.Timestamp = ts
+			}
 		}
 
 		fmt.Printf("Entry created (ID: %d)\n", id)

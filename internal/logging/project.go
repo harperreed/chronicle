@@ -14,6 +14,14 @@ import (
 
 // WriteProjectLog appends entry to project log file
 func WriteProjectLog(logDir, format string, entry db.Entry) error {
+	// Validate timestamp is not zero
+	if entry.Timestamp.IsZero() {
+		return fmt.Errorf("entry timestamp is zero")
+	}
+
+	// Clean the logDir path to prevent traversal
+	logDir = filepath.Clean(logDir)
+
 	// Create log directory if needed
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return err

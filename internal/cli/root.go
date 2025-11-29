@@ -19,7 +19,7 @@ func Execute() error {
 	if len(os.Args) > 1 {
 		arg := os.Args[1]
 		// Check if it's not a flag and not a known command
-		if arg[0] != '-' {
+		if len(arg) > 0 && arg[0] != '-' {
 			isCommand := false
 			for _, cmd := range rootCmd.Commands() {
 				if cmd.Name() == arg || cmd.HasAlias(arg) {
