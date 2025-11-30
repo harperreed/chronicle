@@ -28,8 +28,9 @@ func NewServer(dbPath string) *Server {
 		dbPath:    dbPath,
 	}
 
-	// Register prompts
+	// Register components
 	server.registerPrompts()
+	server.registerTools()
 
 	return server
 }
