@@ -89,7 +89,7 @@ jobs:
         run: go build -tags sqlite_fts5 -o chronicle .
 
       - name: Verify binary
-        run: ./chronicle --version
+        run: ./chronicle --help
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

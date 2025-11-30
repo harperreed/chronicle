@@ -46,7 +46,7 @@ brews:
     install: |
       bin.install "chronicle"
     test: |
-      system "#{bin}/chronicle", "--version"
+      system "#{bin}/chronicle", "--help"
 
 changelog:
   sort: asc
