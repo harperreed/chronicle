@@ -11,6 +11,9 @@ chronicle
 # Output
 *.out
 
+# GoReleaser
+dist/
+
 # Go workspace file
 go.work
 
