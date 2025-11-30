@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/harper/chronicle/internal/db"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -57,6 +58,28 @@ type SearchEntriesInput struct {
 	Limit int      `json:"limit,omitempty" jsonschema:"Maximum results (default 20)"`
 }
 
+// RememberThisInput defines input for remember_this tool.
+type RememberThisInput struct {
+	Activity string `json:"activity" jsonschema:"The activity or information to remember" jsonschema_extras:"required=true"`
+	Context  string `json:"context,omitempty" jsonschema:"Why this matters or additional context"`
+}
+
+// WhatWasIDoingInput defines input for what_was_i_doing tool.
+type WhatWasIDoingInput struct {
+	Timeframe string `json:"timeframe,omitempty" jsonschema:"Timeframe to search (today, yesterday, this week, last N hours),default=today"`
+}
+
+// WhatWasIDoingOutput provides narrative summary.
+type WhatWasIDoingOutput struct {
+	Summary string      `json:"summary"`
+	Entries []EntryData `json:"entries"`
+}
+
+// FindWhenIInput defines input for find_when_i tool.
+type FindWhenIInput struct {
+	What string `json:"what" jsonschema:"Description of the activity to find" jsonschema_extras:"required=true"`
+}
+
 // registerTools adds all MCP tools to the server.
 func (s *Server) registerTools() {
 	// add_entry tool
@@ -79,6 +102,27 @@ func (s *Server) registerTools() {
 		Description: "Search chronicle history by text, tags, or date range. Use this when the user wants to find specific past activities or recall when something happened.",
 	}
 	mcp.AddTool(s.mcpServer, searchEntriesTool, s.handleSearchEntries)
+
+	// remember_this tool
+	rememberThisTool := &mcp.Tool{
+		Name:        "remember_this",
+		Description: "Proactively log important information the user shares about their work, decisions, or progress. Use this when you notice the user accomplished something worth tracking, even if they don't explicitly ask to log it. Automatically suggests relevant tags based on context.",
+	}
+	mcp.AddTool(s.mcpServer, rememberThisTool, s.handleRememberThis)
+
+	// what_was_i_doing tool
+	whatWasIDoingTool := &mcp.Tool{
+		Name:        "what_was_i_doing",
+		Description: "Recall the user's recent activities and context. Use this at the start of conversations to understand what they've been working on, or when they ask 'what was I doing' or 'where did I leave off'.",
+	}
+	mcp.AddTool(s.mcpServer, whatWasIDoingTool, s.handleWhatWasIDoing)
+
+	// find_when_i tool
+	findWhenITool := &mcp.Tool{
+		Name:        "find_when_i",
+		Description: "Find when the user did something specific. Use this to answer questions like 'when did I deploy X' or 'when did I fix that bug'.",
+	}
+	mcp.AddTool(s.mcpServer, findWhenITool, s.handleFindWhenI)
 }
 
 // handleAddEntry implements the add_entry tool.
@@ -244,4 +288,105 @@ func (s *Server) handleSearchEntries(ctx context.Context, req *mcp.CallToolReque
 	}
 
 	return result, output, nil
+}
+
+// suggestTags provides smart tag suggestions based on content.
+func suggestTags(activity, context string) []string {
+	var tags []string
+
+	combined := activity + " " + context
+	combined = strings.ToLower(combined)
+
+	// Work-related keywords
+	if strings.Contains(combined, "deploy") || strings.Contains(combined, "release") {
+		tags = append(tags, "deployment")
+	}
+	if strings.Contains(combined, "fix") || strings.Contains(combined, "bug") {
+		tags = append(tags, "bug-fix")
+	}
+	if strings.Contains(combined, "decid") || strings.Contains(combined, "chose") {
+		tags = append(tags, "decision")
+	}
+	if strings.Contains(combined, "learn") || strings.Contains(combined, "discover") {
+		tags = append(tags, "learning")
+	}
+	if strings.Contains(combined, "test") {
+		tags = append(tags, "testing")
+	}
+
+	// Default tag
+	if len(tags) == 0 {
+		tags = append(tags, "work")
+	}
+
+	return tags
+}
+
+// handleRememberThis implements the remember_this tool.
+func (s *Server) handleRememberThis(ctx context.Context, req *mcp.CallToolRequest, input RememberThisInput) (*mcp.CallToolResult, AddEntryOutput, error) {
+	// Build message
+	message := input.Activity
+	if input.Context != "" {
+		message = message + " (" + input.Context + ")"
+	}
+
+	// Smart tag suggestions based on keywords
+	tags := suggestTags(input.Activity, input.Context)
+
+	// Delegate to add_entry
+	addInput := AddEntryInput{
+		Message: message,
+		Tags:    tags,
+	}
+
+	return s.handleAddEntry(ctx, req, addInput)
+}
+
+// handleWhatWasIDoing implements the what_was_i_doing tool.
+func (s *Server) handleWhatWasIDoing(ctx context.Context, req *mcp.CallToolRequest, input WhatWasIDoingInput) (*mcp.CallToolResult, WhatWasIDoingOutput, error) {
+	timeframe := input.Timeframe
+	if timeframe == "" {
+		timeframe = "today"
+	}
+
+	// For now, just search recent entries
+	// TODO: Parse timeframe and set date filters
+	searchInput := SearchEntriesInput{
+		Limit: 20,
+	}
+
+	result, listOutput, err := s.handleSearchEntries(ctx, req, searchInput)
+	if err != nil {
+		return nil, WhatWasIDoingOutput{}, err
+	}
+
+	// Build narrative summary
+	var summary strings.Builder
+	summary.WriteString(fmt.Sprintf("Based on %d recent entries:\n\n", listOutput.Count))
+
+	for _, entry := range listOutput.Entries {
+		summary.WriteString(fmt.Sprintf("- %s: %s", entry.Timestamp, entry.Message))
+		if len(entry.Tags) > 0 {
+			summary.WriteString(fmt.Sprintf(" [%s]", strings.Join(entry.Tags, ", ")))
+		}
+		summary.WriteString("\n")
+	}
+
+	output := WhatWasIDoingOutput{
+		Summary: summary.String(),
+		Entries: listOutput.Entries,
+	}
+
+	return result, output, nil
+}
+
+// handleFindWhenI implements the find_when_i tool.
+func (s *Server) handleFindWhenI(ctx context.Context, req *mcp.CallToolRequest, input FindWhenIInput) (*mcp.CallToolResult, ListEntriesOutput, error) {
+	// Search using the description
+	searchInput := SearchEntriesInput{
+		Text:  input.What,
+		Limit: 10,
+	}
+
+	return s.handleSearchEntries(ctx, req, searchInput)
 }
