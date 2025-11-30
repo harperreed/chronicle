@@ -80,6 +80,55 @@ chronicle search "bug" --tag golang --json        # Combined with JSON
 - Natural: `yesterday`, `today`, `"3 days ago"`, `"last week"`
 - ISO: `2025-11-29`, `2025-11-29T14:30:00`
 
+## MCP Server
+
+Chronicle includes an MCP (Model Context Protocol) server that allows AI assistants to interact with your activity log.
+
+### Running the MCP Server
+
+```bash
+# Run the MCP server (stdio transport)
+chronicle mcp
+```
+
+### Configuring with Claude Desktop
+
+Add to your Claude Desktop MCP settings (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "chronicle": {
+      "command": "/path/to/chronicle",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available Tools
+
+**Low-Level Tools:**
+- `add_entry` - Log a new entry
+- `list_entries` - Retrieve recent entries
+- `search_entries` - Search by text, tags, or dates
+
+**High-Level Semantic Tools:**
+- `remember_this` - Proactively log important information with smart tagging
+- `what_was_i_doing` - Recall recent activities and context
+- `find_when_i` - Find when you did something specific
+
+### Available Resources
+
+- `chronicle://recent-activity` - Last 10 entries
+- `chronicle://tags` - Tag usage statistics
+- `chronicle://today-summary` - Today's activity summary
+- `chronicle://project-context` - Current project's chronicle config
+
+### Available Prompts
+
+- `chronicle-getting-started` - Introduction to using chronicle with AI
+
 ## Project-Specific Logs
 
 Enable local log files for a project by creating `.chronicle`:
