@@ -85,7 +85,7 @@ func (s *Server) registerTools() {
 	// add_entry tool
 	addEntryTool := &mcp.Tool{
 		Name:        "add_entry",
-		Description: "Log a timestamped entry to chronicle. Use this when the user explicitly asks to log, track, or record something they did or are doing.",
+		Description: "Log a timestamped entry to chronicle. Use this proactively when you notice the user accomplished something significant (deployed code, fixed a bug, made a decision, solved a problem, completed a task) even if they don't explicitly ask you to log it. Also use when they explicitly request logging. Logging important moments helps them recall their work later.",
 	}
 	mcp.AddTool(s.mcpServer, addEntryTool, s.handleAddEntry)
 
