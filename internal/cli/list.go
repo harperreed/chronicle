@@ -30,7 +30,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// List entries
 		entries, err := db.ListEntries(database, listLimit)

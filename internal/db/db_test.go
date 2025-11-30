@@ -1,3 +1,5 @@
+//go:build sqlite_fts5
+
 // ABOUTME: Database tests for schema initialization
 // ABOUTME: Validates table creation and connection handling
 package db
@@ -17,7 +19,7 @@ func TestInitDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitDB failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify database file was created
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {

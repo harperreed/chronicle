@@ -14,6 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	unknownValue = "unknown"
+)
+
 var (
 	tags []string
 )
@@ -35,20 +39,24 @@ var addCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to open database: %w", err)
 		}
-		defer database.Close()
+		defer func() {
+			if closeErr := database.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to close database: %v\n", closeErr)
+			}
+		}()
 
 		// Get metadata
 		hostname, err := os.Hostname()
 		if err != nil {
-			hostname = "unknown"
+			hostname = unknownValue
 		}
 		username := os.Getenv("USER")
 		if username == "" {
-			username = "unknown"
+			username = unknownValue
 		}
 		workingDir, err := os.Getwd()
 		if err != nil {
-			workingDir = "unknown"
+			workingDir = unknownValue
 		}
 
 		// Create entry

@@ -14,11 +14,11 @@ func TestFindProjectRoot(t *testing.T) {
 
 	projectRoot := filepath.Join(tmpDir, "project")
 	subDir := filepath.Join(projectRoot, "src", "deep", "nested")
-	os.MkdirAll(subDir, 0755)
+	_ = os.MkdirAll(subDir, 0755) //nolint:gosec // Test directory permissions
 
 	// Create .chronicle file
 	chronicleFile := filepath.Join(projectRoot, ".chronicle")
-	os.WriteFile(chronicleFile, []byte("local_logging = true\n"), 0644)
+	_ = os.WriteFile(chronicleFile, []byte("local_logging = true\n"), 0644) //nolint:gosec // Test file permissions
 
 	t.Run("finds project root from nested directory", func(t *testing.T) {
 		root, err := FindProjectRoot(subDir)
@@ -32,7 +32,7 @@ func TestFindProjectRoot(t *testing.T) {
 
 	t.Run("returns empty when no .chronicle found", func(t *testing.T) {
 		otherDir := filepath.Join(tmpDir, "other")
-		os.MkdirAll(otherDir, 0755)
+		_ = os.MkdirAll(otherDir, 0755) //nolint:gosec // Test directory permissions
 
 		root, err := FindProjectRoot(otherDir)
 		if err != nil {
@@ -53,7 +53,7 @@ log_dir = "custom-logs"
 log_format = "json"
 `
 	configPath := filepath.Join(tmpDir, ".chronicle")
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	_ = os.WriteFile(configPath, []byte(configContent), 0644) //nolint:gosec // Test file permissions
 
 	cfg, err := LoadProjectConfig(configPath)
 	if err != nil {

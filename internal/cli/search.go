@@ -35,7 +35,7 @@ var searchCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Build search params
 		params := db.SearchParams{

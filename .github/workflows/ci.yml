@@ -1,4 +1,4 @@
-# ABOUTME: GitHub Actions CI workflow for pagen
+# ABOUTME: GitHub Actions CI workflow for chronicle
 # ABOUTME: Runs tests, linting, and builds on multiple Go versions
 name: CI
 
@@ -39,11 +39,11 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: make test-race
+        run: go test -tags sqlite_fts5 -race ./...
 
       - name: Run tests with coverage
         if: matrix.go-version == '1.23'
-        run: make test-coverage
+        run: go test -tags sqlite_fts5 -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
         if: matrix.go-version == '1.23'
@@ -86,14 +86,14 @@ jobs:
           cache: true
 
       - name: Build binary
-        run: make build
+        run: go build -tags sqlite_fts5 -o chronicle .
 
       - name: Verify binary
-        run: ./pagen --version
+        run: ./chronicle --version
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pagen-linux-amd64
-          path: pagen
+          name: chronicle-linux-amd64
+          path: chronicle
           retention-days: 7

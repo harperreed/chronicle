@@ -16,7 +16,7 @@ type ProjectConfig struct {
 }
 
 // FindProjectRoot walks up from dir looking for .chronicle file
-// Returns empty string if not found
+// Returns empty string if not found.
 func FindProjectRoot(dir string) (string, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -46,7 +46,7 @@ func FindProjectRoot(dir string) (string, error) {
 	}
 }
 
-// LoadProjectConfig loads .chronicle config from path
+// LoadProjectConfig loads .chronicle config from path.
 func LoadProjectConfig(path string) (*ProjectConfig, error) {
 	var cfg ProjectConfig
 

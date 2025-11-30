@@ -1,3 +1,5 @@
+//go:build sqlite_fts5
+
 // ABOUTME: Tests for entry creation and retrieval
 // ABOUTME: Validates insert operations and metadata capture
 package db
@@ -17,7 +19,7 @@ func TestCreateEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitDB failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	entry := Entry{
 		Message:          "test message",
@@ -57,7 +59,7 @@ func TestCreateEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to query tags: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var gotTags []string
 	for rows.Next() {
@@ -81,7 +83,7 @@ func TestListEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitDB failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test entries
 	for i := 0; i < 5; i++ {
@@ -122,7 +124,7 @@ func TestSearchEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitDB failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create test entries
 	entries := []Entry{

@@ -12,7 +12,7 @@ import (
 	"github.com/harper/chronicle/internal/db"
 )
 
-// WriteProjectLog appends entry to project log file
+// WriteProjectLog appends entry to project log file.
 func WriteProjectLog(logDir, format string, entry db.Entry) error {
 	// Validate timestamp is not zero
 	if entry.Timestamp.IsZero() {
@@ -23,12 +23,12 @@ func WriteProjectLog(logDir, format string, entry db.Entry) error {
 	logDir = filepath.Clean(logDir)
 
 	// Create log directory if needed
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0755); err != nil { //nolint:gosec // Standard directory permissions for project logs
 		return err
 	}
 
-	// Determine log file name (one per day)
-	date := entry.Timestamp.Format("2006-01-02")
+	// Determine log file name (one per day in local time)
+	date := entry.Timestamp.Local().Format("2006-01-02")
 	logFile := filepath.Join(logDir, date+".log")
 
 	// Format entry
@@ -47,11 +47,11 @@ func WriteProjectLog(logDir, format string, entry db.Entry) error {
 	}
 
 	// Append to file
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) //nolint:gosec // Standard file permissions for log files
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = f.WriteString(content)
 	return err

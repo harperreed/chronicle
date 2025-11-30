@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// GetDataHome returns XDG_DATA_HOME or fallback to ~/.local/share
+// GetDataHome returns XDG_DATA_HOME or fallback to ~/.local/share.
 func GetDataHome() string {
 	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
 		return xdg
@@ -16,7 +16,7 @@ func GetDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// GetConfigHome returns XDG_CONFIG_HOME or fallback to ~/.config
+// GetConfigHome returns XDG_CONFIG_HOME or fallback to ~/.config.
 func GetConfigHome() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return xdg

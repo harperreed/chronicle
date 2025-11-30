@@ -1,0 +1,57 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go test -tags sqlite_fts5 ./...
+
+builds:
+  - main: .
+    binary: chronicle
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=1
+    flags:
+      - -trimpath
+      - -tags=sqlite_fts5
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+      - docs/*
+
+release:
+  github:
+    owner: harperreed
+    name: chronicle
+
+brews:
+  - repository:
+      owner: harperreed
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/harperreed/chronicle"
+    description: "Timestamped logging tool with SQLite and optional project log files"
+    license: "MIT"
+    install: |
+      bin.install "chronicle"
+    test: |
+      system "#{bin}/chronicle", "--version"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'

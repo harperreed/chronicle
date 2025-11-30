@@ -18,13 +18,13 @@ type Entry struct {
 	Tags             []string
 }
 
-// CreateEntry inserts a new entry and returns its ID
+// CreateEntry inserts a new entry and returns its ID.
 func CreateEntry(db *sql.DB, entry Entry) (int64, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Insert entry
 	result, err := tx.Exec(
@@ -55,7 +55,7 @@ func CreateEntry(db *sql.DB, entry Entry) (int64, error) {
 	return entryID, nil
 }
 
-// ListEntries returns the most recent entries, limited by limit
+// ListEntries returns the most recent entries, limited by limit.
 func ListEntries(db *sql.DB, limit int) ([]Entry, error) {
 	query := `
 		SELECT id, timestamp, message, hostname, username, working_directory
@@ -68,7 +68,7 @@ func ListEntries(db *sql.DB, limit int) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []Entry
 	var entryIDs []int64
@@ -110,8 +110,23 @@ type SearchParams struct {
 	Limit int
 }
 
-// SearchEntries searches entries based on parameters
+// SearchEntries searches entries based on parameters.
 func SearchEntries(db *sql.DB, params SearchParams) ([]Entry, error) {
+	query, args := buildSearchQuery(params)
+	entries, entryIDs, err := executeEntryQuery(db, query, args)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := attachTagsToEntries(db, entries, entryIDs); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+// buildSearchQuery constructs the SQL query and arguments from search parameters.
+func buildSearchQuery(params SearchParams) (string, []interface{}) {
 	query := "SELECT DISTINCT e.id, e.timestamp, e.message, e.hostname, e.username, e.working_directory FROM entries e"
 	var conditions []string
 	var args []interface{}
@@ -162,11 +177,16 @@ func SearchEntries(db *sql.DB, params SearchParams) ([]Entry, error) {
 		args = append(args, params.Limit)
 	}
 
+	return query, args
+}
+
+// executeEntryQuery runs the query and scans results into entries.
+func executeEntryQuery(db *sql.DB, query string, args []interface{}) ([]Entry, []int64, error) {
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []Entry
 	var entryIDs []int64
@@ -174,33 +194,38 @@ func SearchEntries(db *sql.DB, params SearchParams) ([]Entry, error) {
 		var entry Entry
 		err := rows.Scan(&entry.ID, &entry.Timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		entries = append(entries, entry)
 		entryIDs = append(entryIDs, entry.ID)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Load all tags in one query instead of N queries
-	if len(entryIDs) > 0 {
-		tags, err := loadTagsForEntries(db, entryIDs)
-		if err != nil {
-			return nil, err
-		}
-
-		// Assign tags to entries
-		for i := range entries {
-			entries[i].Tags = tags[entries[i].ID]
-		}
-	}
-
-	return entries, nil
+	return entries, entryIDs, nil
 }
 
-// loadTagsForEntries loads tags for multiple entries in a single query
+// attachTagsToEntries loads tags and attaches them to entries.
+func attachTagsToEntries(db *sql.DB, entries []Entry, entryIDs []int64) error {
+	if len(entryIDs) == 0 {
+		return nil
+	}
+
+	tags, err := loadTagsForEntries(db, entryIDs)
+	if err != nil {
+		return err
+	}
+
+	for i := range entries {
+		entries[i].Tags = tags[entries[i].ID]
+	}
+
+	return nil
+}
+
+// loadTagsForEntries loads tags for multiple entries in a single query.
 func loadTagsForEntries(db *sql.DB, entryIDs []int64) (map[int64][]string, error) {
 	if len(entryIDs) == 0 {
 		return make(map[int64][]string), nil
@@ -214,14 +239,17 @@ func loadTagsForEntries(db *sql.DB, entryIDs []int64) (map[int64][]string, error
 		args[i] = id
 	}
 
-	query := "SELECT entry_id, tag FROM tags WHERE entry_id IN (" +
-		strings.Join(placeholders, ",") + ") ORDER BY entry_id, tag"
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("SELECT entry_id, tag FROM tags WHERE entry_id IN (")
+	queryBuilder.WriteString(strings.Join(placeholders, ","))
+	queryBuilder.WriteString(") ORDER BY entry_id, tag")
+	query := queryBuilder.String()
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Group tags by entry_id
 	tagMap := make(map[int64][]string)

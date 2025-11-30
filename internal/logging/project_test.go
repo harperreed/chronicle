@@ -37,7 +37,7 @@ func TestWriteProjectLog(t *testing.T) {
 	}
 
 	// Verify content
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) //nolint:gosec // Reading test file
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestWriteProjectLogJSON(t *testing.T) {
 
 	// Verify content is valid JSON
 	logFile := filepath.Join(logDir, "2025-11-29.log")
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) //nolint:gosec // Reading test file
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestWriteProjectLogMultipleEntries(t *testing.T) {
 
 	// Verify both entries are in the log file
 	logFile := filepath.Join(logDir, "2025-11-29.log")
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) //nolint:gosec // Reading test file
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
 	}
