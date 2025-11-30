@@ -31,6 +31,7 @@ func NewServer(dbPath string) *Server {
 	// Register components
 	server.registerPrompts()
 	server.registerTools()
+	server.registerResources()
 
 	return server
 }
