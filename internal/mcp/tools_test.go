@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -48,5 +49,48 @@ func TestAddEntryTool(t *testing.T) {
 
 	if output.Message != "test message" {
 		t.Errorf("expected message 'test message', got %s", output.Message)
+	}
+}
+
+func TestListEntriesTool(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Add test entries
+	for i := 0; i < 5; i++ {
+		entry := db.Entry{
+			Message:          fmt.Sprintf("message %d", i),
+			Hostname:         "testhost",
+			Username:         "testuser",
+			WorkingDirectory: "/test",
+			Tags:             []string{"test"},
+		}
+		_, err := db.CreateEntry(database, entry)
+		if err != nil {
+			t.Fatalf("failed to create entry: %v", err)
+		}
+	}
+
+	server := NewServer(dbPath)
+
+	input := ListEntriesInput{Limit: 3}
+	result, output, err := server.handleListEntries(context.Background(), nil, input)
+
+	if err != nil {
+		t.Fatalf("handleListEntries failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	if len(output.Entries) != 3 {
+		t.Errorf("expected 3 entries, got %d", len(output.Entries))
 	}
 }
