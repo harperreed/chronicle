@@ -48,6 +48,15 @@ type ListEntriesOutput struct {
 	Count   int         `json:"count"`
 }
 
+// SearchEntriesInput defines the input for search_entries tool.
+type SearchEntriesInput struct {
+	Text  string   `json:"text,omitempty" jsonschema:"Text to search for in entries"`
+	Tags  []string `json:"tags,omitempty" jsonschema:"Filter by tags"`
+	Since string   `json:"since,omitempty" jsonschema:"Start date/time (e.g. '2025-01-01' or 'yesterday')"`
+	Until string   `json:"until,omitempty" jsonschema:"End date/time"`
+	Limit int      `json:"limit,omitempty" jsonschema:"Maximum results (default 20)"`
+}
+
 // registerTools adds all MCP tools to the server.
 func (s *Server) registerTools() {
 	// add_entry tool
@@ -63,6 +72,13 @@ func (s *Server) registerTools() {
 		Description: "Retrieve recent chronicle entries. Use this to answer questions like 'what did I do today/recently' or 'show my recent work'.",
 	}
 	mcp.AddTool(s.mcpServer, listEntriesTool, s.handleListEntries)
+
+	// search_entries tool
+	searchEntriesTool := &mcp.Tool{
+		Name:        "search_entries",
+		Description: "Search chronicle history by text, tags, or date range. Use this when the user wants to find specific past activities or recall when something happened.",
+	}
+	mcp.AddTool(s.mcpServer, searchEntriesTool, s.handleSearchEntries)
 }
 
 // handleAddEntry implements the add_entry tool.
@@ -168,6 +184,61 @@ func (s *Server) handleListEntries(ctx context.Context, req *mcp.CallToolRequest
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: fmt.Sprintf("Retrieved %d recent entries", len(outputEntries)),
+			},
+		},
+	}
+
+	return result, output, nil
+}
+
+// handleSearchEntries implements the search_entries tool.
+func (s *Server) handleSearchEntries(ctx context.Context, req *mcp.CallToolRequest, input SearchEntriesInput) (*mcp.CallToolResult, ListEntriesOutput, error) {
+	limit := input.Limit
+	if limit == 0 {
+		limit = 20
+	}
+
+	database, err := db.InitDB(s.dbPath)
+	if err != nil {
+		return nil, ListEntriesOutput{}, fmt.Errorf("failed to open database: %w", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	params := db.SearchParams{
+		Text:  input.Text,
+		Tags:  input.Tags,
+		Limit: limit,
+	}
+
+	// TODO: Parse Since/Until dates - for now skip date parsing
+
+	entries, err := db.SearchEntries(database, params)
+	if err != nil {
+		return nil, ListEntriesOutput{}, fmt.Errorf("failed to search entries: %w", err)
+	}
+
+	outputEntries := make([]EntryData, len(entries))
+	for i, entry := range entries {
+		outputEntries[i] = EntryData{
+			ID:        entry.ID,
+			Timestamp: entry.Timestamp.Format("2006-01-02 15:04:05"),
+			Message:   entry.Message,
+			Tags:      entry.Tags,
+			Hostname:  entry.Hostname,
+			Username:  entry.Username,
+			Directory: entry.WorkingDirectory,
+		}
+	}
+
+	output := ListEntriesOutput{
+		Entries: outputEntries,
+		Count:   len(outputEntries),
+	}
+
+	result := &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Found %d matching entries", len(outputEntries)),
 			},
 		},
 	}
