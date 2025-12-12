@@ -344,13 +344,10 @@ func (s *Server) handleRememberThis(ctx context.Context, req *mcp.CallToolReques
 
 // handleWhatWasIDoing implements the what_was_i_doing tool.
 func (s *Server) handleWhatWasIDoing(ctx context.Context, req *mcp.CallToolRequest, input WhatWasIDoingInput) (*mcp.CallToolResult, WhatWasIDoingOutput, error) {
-	timeframe := input.Timeframe
-	if timeframe == "" {
-		timeframe = "today"
-	}
+	// TODO: Parse input.Timeframe and set date filters
+	// For now, just search recent entries regardless of timeframe
+	_ = input.Timeframe // silence unused warning until timeframe parsing is implemented
 
-	// For now, just search recent entries
-	// TODO: Parse timeframe and set date filters
 	searchInput := SearchEntriesInput{
 		Limit: 20,
 	}
