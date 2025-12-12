@@ -10,16 +10,9 @@ permissions:
   packages: write
 
 jobs:
-  release:
-    name: Release (${{ matrix.goos }})
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            goos: darwin
-          - os: ubuntu-latest
-            goos: linux
-    runs-on: ${{ matrix.os }}
+  build-darwin:
+    name: Build (darwin)
+    runs-on: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,27 +25,32 @@ jobs:
           go-version: '1.23'
           cache: true
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean --split
+      - name: Build darwin/amd64
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOS: ${{ matrix.goos }}
+          CGO_ENABLED: 1
+          GOOS: darwin
+          GOARCH: amd64
+        run: |
+          go build -tags sqlite_fts5 -trimpath -ldflags="-s -w" -o chronicle-darwin-amd64 .
+
+      - name: Build darwin/arm64
+        env:
+          CGO_ENABLED: 1
+          GOOS: darwin
+          GOARCH: arm64
+        run: |
+          go build -tags sqlite_fts5 -trimpath -ldflags="-s -w" -o chronicle-darwin-arm64 .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.goos }}
-          path: dist/
+          name: binaries-darwin
+          path: chronicle-darwin-*
           retention-days: 1
 
-  merge:
-    name: Merge and Publish
+  build-linux:
+    name: Build (linux)
     runs-on: ubuntu-latest
-    needs: release
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -65,31 +63,114 @@ jobs:
           go-version: '1.23'
           cache: true
 
-      - name: Download darwin artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-darwin
-          path: dist/darwin
-
-      - name: Download linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-linux
-          path: dist/linux
-
-      - name: Merge dist folders
+      - name: Build linux/amd64
+        env:
+          CGO_ENABLED: 1
+          GOOS: linux
+          GOARCH: amd64
         run: |
-          mkdir -p dist
-          cp -r dist/darwin/* dist/ || true
-          cp -r dist/linux/* dist/ || true
-          ls -la dist/
+          go build -tags sqlite_fts5 -trimpath -ldflags="-s -w" -o chronicle-linux-amd64 .
 
-      - name: Run GoReleaser Merge
-        uses: goreleaser/goreleaser-action@v6
+      - name: Build linux/arm64
+        env:
+          CGO_ENABLED: 1
+          GOOS: linux
+          GOARCH: arm64
+          CC: aarch64-linux-gnu-gcc
+        run: |
+          sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+          go build -tags sqlite_fts5 -trimpath -ldflags="-s -w" -o chronicle-linux-arm64 .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          distribution: goreleaser
-          version: latest
-          args: continue --merge
+          name: binaries-linux
+          path: chronicle-linux-*
+          retention-days: 1
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-darwin, build-linux]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download darwin binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-darwin
+          path: dist/
+
+      - name: Download linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux
+          path: dist/
+
+      - name: Create archives
+        run: |
+          cd dist
+          for bin in chronicle-*; do
+            chmod +x "$bin"
+            tar -czvf "${bin}.tar.gz" "$bin"
+          done
+          ls -la
+
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            dist/*.tar.gz
+
+      - name: Update Homebrew Tap
+        env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          # Calculate SHA256 for darwin arm64 (primary for Homebrew)
+          SHA256=$(sha256sum dist/chronicle-darwin-arm64.tar.gz | cut -d' ' -f1)
+          VERSION=${{ github.ref_name }}
+          VERSION=${VERSION#v}
+
+          echo "Version: $VERSION"
+          echo "SHA256: $SHA256"
+
+          # Clone tap repo and update formula
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/harperreed/homebrew-tap.git tap
+          cd tap
+
+          cat > Formula/chronicle.rb << EOF
+          class Chronicle < Formula
+            desc "Timestamped logging tool with SQLite and optional project log files"
+            homepage "https://github.com/harperreed/chronicle"
+            version "$VERSION"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/harperreed/chronicle/releases/download/v${VERSION}/chronicle-darwin-arm64.tar.gz"
+                sha256 "$SHA256"
+              else
+                url "https://github.com/harperreed/chronicle/releases/download/v${VERSION}/chronicle-darwin-amd64.tar.gz"
+                sha256 "$(sha256sum ../dist/chronicle-darwin-amd64.tar.gz | cut -d' ' -f1)"
+              end
+            end
+
+            def install
+              bin.install Dir["chronicle-*"].first => "chronicle"
+            end
+
+            test do
+              system "#{bin}/chronicle", "--help"
+            end
+          end
+          EOF
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/chronicle.rb
+          git commit -m "Update chronicle to $VERSION" || echo "No changes to commit"
+          git push || echo "Push failed - may need manual update"
