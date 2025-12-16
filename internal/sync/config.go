@@ -94,7 +94,8 @@ func LoadConfig() (*Config, error) {
 
 func defaultConfig() *Config {
 	return &Config{
-		VaultDB: filepath.Join(ConfigDir(), "vault.db"),
+		VaultDB:  filepath.Join(ConfigDir(), "vault.db"),
+		AutoSync: true,
 	}
 }
 
@@ -114,8 +115,8 @@ func applyEnvOverrides(cfg *Config) {
 	if deviceID := os.Getenv("CHRONICLE_DEVICE_ID"); deviceID != "" {
 		cfg.DeviceID = deviceID
 	}
-	if autoSync := os.Getenv("CHRONICLE_AUTO_SYNC"); autoSync == "1" || autoSync == "true" {
-		cfg.AutoSync = true
+	if autoSync := os.Getenv("CHRONICLE_AUTO_SYNC"); autoSync != "" {
+		cfg.AutoSync = autoSync == "1" || autoSync == "true"
 	}
 }
 
@@ -144,6 +145,7 @@ func InitConfig() (*Config, error) {
 	cfg := &Config{
 		DeviceID: deviceID,
 		VaultDB:  filepath.Join(ConfigDir(), "vault.db"),
+		AutoSync: true,
 	}
 
 	if err := SaveConfig(cfg); err != nil {
