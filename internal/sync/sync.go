@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/harper/chronicle/internal/db"
 )

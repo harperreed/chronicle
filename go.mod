@@ -8,12 +8,12 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/google/uuid v1.6.0
+	github.com/harperreed/sweet v0.3.1
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/term v0.38.0
-	suitesync v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -35,5 +35,3 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.40.1 // indirect
 )
-
-replace suitesync => github.com/harperreed/sweet v0.3.0

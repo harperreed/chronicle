@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/db"
