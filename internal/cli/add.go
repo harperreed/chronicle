@@ -1,9 +1,12 @@
 // ABOUTME: Add command for creating new log entries
-// ABOUTME: Handles message input and tag flags
+// ABOUTME: Handles message input and tag flags with optional sync
 package cli
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +14,7 @@ import (
 	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/db"
 	"github.com/harper/chronicle/internal/logging"
+	"github.com/harper/chronicle/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +77,9 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("failed to create entry: %w", err)
 		}
 
+		// Update entry with the returned ID
+		entry.ID = id
+
 		// Fetch the specific entry we just created by ID to get its timestamp
 		err = database.QueryRow("SELECT timestamp FROM entries WHERE id = ?", id).Scan(&entry.Timestamp)
 		if err != nil {
@@ -81,6 +88,11 @@ var addCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Entry created (ID: %s)\n", id)
+
+		// Queue for sync (secondary, non-blocking)
+		if err := queueEntryToSync(cmd.Context(), database, entry); err != nil {
+			log.Printf("warning: sync queue failed: %v", err)
+		}
 
 		// Check for project logging
 		projectRoot, err := config.FindProjectRoot(workingDir)
@@ -99,6 +111,33 @@ var addCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func queueEntryToSync(ctx context.Context, appDB *sql.DB, entry db.Entry) error {
+	cfg, err := sync.LoadConfig()
+	if err != nil {
+		return nil // No config, skip silently
+	}
+
+	if !cfg.IsConfigured() {
+		return nil // Not configured, skip silently
+	}
+
+	syncer, err := sync.NewSyncer(cfg, appDB)
+	if err != nil {
+		return fmt.Errorf("create syncer: %w", err)
+	}
+	defer func() {
+		if closeErr := syncer.Close(); closeErr != nil {
+			log.Printf("warning: failed to close syncer: %v", closeErr)
+		}
+	}()
+
+	if err := syncer.QueueEntryChange(ctx, entry, sync.OpUpsert); err != nil {
+		return fmt.Errorf("queue entry: %w", err)
+	}
+
+	return nil
 }
 
 func init() {
