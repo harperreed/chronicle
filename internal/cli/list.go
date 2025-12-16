@@ -54,7 +54,7 @@ var listCmd = &cobra.Command{
 					tagsStr = fmt.Sprintf("%v", entry.Tags)
 				}
 				timestamp := entry.Timestamp.Format("2006-01-02 15:04:05")
-				fmt.Printf("%d\t%s\t%s\t%s\n", entry.ID, timestamp, tagsStr, entry.Message)
+				fmt.Printf("%s\t%s\t%s\t%s\n", entry.ID, timestamp, tagsStr, entry.Message)
 			}
 		}
 

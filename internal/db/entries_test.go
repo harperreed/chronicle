@@ -34,8 +34,11 @@ func TestCreateEntry(t *testing.T) {
 		t.Fatalf("CreateEntry failed: %v", err)
 	}
 
-	if id == 0 {
-		t.Error("expected non-zero ID")
+	if id == "" {
+		t.Error("expected non-empty ID")
+	}
+	if len(id) != 36 {
+		t.Errorf("expected UUID (36 chars), got %q (%d chars)", id, len(id))
 	}
 
 	// Verify entry was created

@@ -43,8 +43,11 @@ func TestAddEntryTool(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 
-	if output.EntryID == 0 {
-		t.Error("expected non-zero entry ID")
+	if output.EntryID == "" {
+		t.Error("expected non-empty entry ID")
+	}
+	if len(output.EntryID) != 36 {
+		t.Errorf("expected UUID (36 chars), got %q (%d chars)", output.EntryID, len(output.EntryID))
 	}
 
 	if output.Message != "test message" {

@@ -80,7 +80,7 @@ var addCmd = &cobra.Command{
 			entry.Timestamp = time.Now()
 		}
 
-		fmt.Printf("Entry created (ID: %d)\n", id)
+		fmt.Printf("Entry created (ID: %s)\n", id)
 
 		// Check for project logging
 		projectRoot, err := config.FindProjectRoot(workingDir)

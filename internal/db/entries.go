@@ -6,10 +6,12 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Entry struct {
-	ID               int64
+	ID               string
 	Timestamp        time.Time
 	Message          string
 	Hostname         string
@@ -18,38 +20,39 @@ type Entry struct {
 	Tags             []string
 }
 
-// CreateEntry inserts a new entry and returns its ID.
-func CreateEntry(db *sql.DB, entry Entry) (int64, error) {
+// CreateEntry inserts a new entry and returns its UUID.
+func CreateEntry(db *sql.DB, entry Entry) (string, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Insert entry
-	result, err := tx.Exec(
-		"INSERT INTO entries (message, hostname, username, working_directory) VALUES (?, ?, ?, ?)",
-		entry.Message, entry.Hostname, entry.Username, entry.WorkingDirectory,
-	)
-	if err != nil {
-		return 0, err
+	// Generate UUID if not provided
+	entryID := entry.ID
+	if entryID == "" {
+		entryID = uuid.New().String()
 	}
 
-	entryID, err := result.LastInsertId()
+	// Insert entry
+	_, err = tx.Exec(
+		"INSERT INTO entries (id, message, hostname, username, working_directory) VALUES (?, ?, ?, ?, ?)",
+		entryID, entry.Message, entry.Hostname, entry.Username, entry.WorkingDirectory,
+	)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 
 	// Insert tags
 	for _, tag := range entry.Tags {
 		_, err := tx.Exec("INSERT INTO tags (entry_id, tag) VALUES (?, ?)", entryID, tag)
 		if err != nil {
-			return 0, err
+			return "", err
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return "", err
 	}
 
 	return entryID, nil
@@ -71,7 +74,7 @@ func ListEntries(db *sql.DB, limit int) ([]Entry, error) {
 	defer func() { _ = rows.Close() }()
 
 	var entries []Entry
-	var entryIDs []int64
+	var entryIDs []string
 	for rows.Next() {
 		var entry Entry
 		err := rows.Scan(&entry.ID, &entry.Timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory)
@@ -133,7 +136,7 @@ func buildSearchQuery(params SearchParams) (string, []interface{}) {
 
 	// Full-text search
 	if params.Text != "" {
-		query += " JOIN entries_fts ON entries_fts.rowid = e.id"
+		query += " JOIN entries_fts ON entries_fts.id = e.id"
 		conditions = append(conditions, "entries_fts MATCH ?")
 		args = append(args, params.Text)
 	}
@@ -181,7 +184,7 @@ func buildSearchQuery(params SearchParams) (string, []interface{}) {
 }
 
 // executeEntryQuery runs the query and scans results into entries.
-func executeEntryQuery(db *sql.DB, query string, args []interface{}) ([]Entry, []int64, error) {
+func executeEntryQuery(db *sql.DB, query string, args []interface{}) ([]Entry, []string, error) {
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, nil, err
@@ -189,7 +192,7 @@ func executeEntryQuery(db *sql.DB, query string, args []interface{}) ([]Entry, [
 	defer func() { _ = rows.Close() }()
 
 	var entries []Entry
-	var entryIDs []int64
+	var entryIDs []string
 	for rows.Next() {
 		var entry Entry
 		err := rows.Scan(&entry.ID, &entry.Timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory)
@@ -208,7 +211,7 @@ func executeEntryQuery(db *sql.DB, query string, args []interface{}) ([]Entry, [
 }
 
 // attachTagsToEntries loads tags and attaches them to entries.
-func attachTagsToEntries(db *sql.DB, entries []Entry, entryIDs []int64) error {
+func attachTagsToEntries(db *sql.DB, entries []Entry, entryIDs []string) error {
 	if len(entryIDs) == 0 {
 		return nil
 	}
@@ -226,9 +229,9 @@ func attachTagsToEntries(db *sql.DB, entries []Entry, entryIDs []int64) error {
 }
 
 // loadTagsForEntries loads tags for multiple entries in a single query.
-func loadTagsForEntries(db *sql.DB, entryIDs []int64) (map[int64][]string, error) {
+func loadTagsForEntries(db *sql.DB, entryIDs []string) (map[string][]string, error) {
 	if len(entryIDs) == 0 {
-		return make(map[int64][]string), nil
+		return make(map[string][]string), nil
 	}
 
 	// Build IN clause with placeholders
@@ -252,9 +255,9 @@ func loadTagsForEntries(db *sql.DB, entryIDs []int64) (map[int64][]string, error
 	defer func() { _ = rows.Close() }()
 
 	// Group tags by entry_id
-	tagMap := make(map[int64][]string)
+	tagMap := make(map[string][]string)
 	for rows.Next() {
-		var entryID int64
+		var entryID string
 		var tag string
 		if err := rows.Scan(&entryID, &tag); err != nil {
 			return nil, err

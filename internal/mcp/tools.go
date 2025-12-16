@@ -22,7 +22,7 @@ type AddEntryInput struct {
 
 // AddEntryOutput defines the output for add_entry tool.
 type AddEntryOutput struct {
-	EntryID   int64  `json:"entry_id" jsonschema:"The ID of the created entry"`
+	EntryID   string `json:"entry_id" jsonschema:"The ID of the created entry"`
 	Message   string `json:"message" jsonschema:"The logged message"`
 	Timestamp string `json:"timestamp" jsonschema:"When the entry was created"`
 }
@@ -34,7 +34,7 @@ type ListEntriesInput struct {
 
 // EntryData represents a chronicle entry for output.
 type EntryData struct {
-	ID        int64    `json:"id"`
+	ID        string   `json:"id"`
 	Timestamp string   `json:"timestamp"`
 	Message   string   `json:"message"`
 	Tags      []string `json:"tags"`
@@ -180,7 +180,7 @@ func (s *Server) handleAddEntry(ctx context.Context, req *mcp.CallToolRequest, i
 	result := &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: fmt.Sprintf("Entry created successfully (ID: %d) at %s", id, timestamp),
+				Text: fmt.Sprintf("Entry created successfully (ID: %s) at %s", id, timestamp),
 			},
 		},
 	}
