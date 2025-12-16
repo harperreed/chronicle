@@ -4,6 +4,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -38,6 +39,19 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	if _, err := db.Exec("PRAGMA synchronous = NORMAL"); err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+
+	// Check for and run UUID migration
+	needsMigration, err := needsUUIDMigration(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("check migration: %w", err)
+	}
+	if needsMigration {
+		if err := migrateToUUID(db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("run migration: %w", err)
+		}
 	}
 
 	// Execute schema

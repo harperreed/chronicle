@@ -4,7 +4,7 @@ package db
 
 const schema = `
 CREATE TABLE IF NOT EXISTS entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     message TEXT NOT NULL,
     hostname TEXT NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS entries (
 
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_id INTEGER NOT NULL,
+    entry_id TEXT NOT NULL,
     tag TEXT NOT NULL,
     FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
 );
