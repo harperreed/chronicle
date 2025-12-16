@@ -1,5 +1,8 @@
 // ABOUTME: Tests for sync configuration
 // ABOUTME: Verifies config load, save, and validation
+
+//go:build sqlite_fts5
+
 package sync
 
 import (

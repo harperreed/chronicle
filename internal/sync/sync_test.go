@@ -1,5 +1,8 @@
 // ABOUTME: Tests for vault syncer
 // ABOUTME: Verifies change queuing and apply logic
+
+//go:build sqlite_fts5
+
 package sync
 
 import (
