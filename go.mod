@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/modelcontextprotocol/go-sdk v1.1.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.1
 )
 
