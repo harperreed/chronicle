@@ -1466,7 +1466,6 @@ package cli
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -1480,6 +1479,7 @@ import (
 	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/db"
 	"github.com/harper/chronicle/internal/sync"
+	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -1571,9 +1571,16 @@ var syncLoginCmd = &cobra.Command{
 			return fmt.Errorf("invalid recovery phrase: %w", err)
 		}
 
+		// Ensure device ID exists BEFORE login (v0.3.0 requirement)
+		if cfg.DeviceID == "" {
+			cfg.DeviceID = ulid.Make().String()
+		}
+
 		fmt.Printf("\nLogging in to %s...\n", serverURL)
 		client := vault.NewPBAuthClient(serverURL)
-		result, err := client.Login(context.Background(), email, password)
+
+		// v0.3.0: Use LoginWithDevice to register device at auth time
+		result, err := client.LoginWithDevice(context.Background(), email, password, cfg.DeviceID)
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
@@ -1590,9 +1597,6 @@ var syncLoginCmd = &cobra.Command{
 		cfg.RefreshToken = result.RefreshToken
 		cfg.TokenExpires = result.Token.Expires.Format(time.RFC3339)
 		cfg.DerivedKey = derivedKeyHex
-		if cfg.DeviceID == "" {
-			cfg.DeviceID = randHex(16)
-		}
 		if cfg.VaultDB == "" {
 			cfg.VaultDB = filepath.Join(sync.ConfigDir(), "vault.db")
 		}
@@ -1920,11 +1924,6 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", s)
 }
 
-func randHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
 ```
 
 **Step 2: Add golang.org/x/term dependency**
