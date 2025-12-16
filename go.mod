@@ -36,4 +36,4 @@ require (
 	modernc.org/sqlite v1.40.1 // indirect
 )
 
-replace suitesync => /Users/harper/workspace/2389/suite-sync
+replace suitesync => github.com/harperreed/sweet v0.3.0
