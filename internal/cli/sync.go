@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/harperreed/sweet/vault"
-
+	"github.com/fatih/color"
 	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/db"
 	"github.com/harper/chronicle/internal/sync"
+	"github.com/harperreed/sweet/vault"
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -69,6 +69,10 @@ var syncInitCmd = &cobra.Command{
 var syncLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to sync server",
+	Long: `Login to sync service with your credentials and recovery phrase.
+
+Your recovery phrase is used to derive encryption keys - the server
+never sees your data in plaintext.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		server, _ := cmd.Flags().GetString("server")
 
@@ -101,14 +105,24 @@ var syncLoginCmd = &cobra.Command{
 			return fmt.Errorf("read password: %w", err)
 		}
 		password := string(passwordBytes)
+		if password == "" {
+			return fmt.Errorf("password cannot be empty")
+		}
 
-		fmt.Print("\nEnter your recovery phrase:\n> ")
+		fmt.Print("Recovery phrase (12 or 24 words): ")
 		mnemonic, _ := reader.ReadString('\n')
 		mnemonic = strings.TrimSpace(mnemonic)
 
-		if _, err := vault.ParseMnemonic(mnemonic); err != nil {
-			return fmt.Errorf("invalid recovery phrase: %w", err)
+		parsed, err := vault.ParseMnemonic(mnemonic)
+		if err != nil {
+			return fmt.Errorf("invalid recovery phrase: must be 12 or 24 words")
 		}
+		// Verify it's actually 12 or 24 words
+		wordCount := len(strings.Fields(mnemonic))
+		if wordCount != 12 && wordCount != 24 {
+			return fmt.Errorf("invalid recovery phrase: must be 12 or 24 words")
+		}
+		_ = parsed
 
 		// Ensure device ID exists BEFORE login (v0.3.0 requirement)
 		if cfg.DeviceID == "" {
@@ -144,8 +158,11 @@ var syncLoginCmd = &cobra.Command{
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		fmt.Println("\nLogged in to chronicle sync")
-		fmt.Printf("Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
+		color.Green("\n✓ Logged in successfully")
+		fmt.Printf("  User ID: %s\n", cfg.UserID)
+		fmt.Printf("  Device: %s\n", cfg.DeviceID[:8]+"...")
+		fmt.Printf("  Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
+		fmt.Printf("\nRun 'chronicle sync now' to sync your data.\n")
 
 		return nil
 	},
