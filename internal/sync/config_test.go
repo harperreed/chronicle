@@ -18,8 +18,8 @@ import (
 func TestLoadConfigNoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Set HOME to temp dir so ConfigPath returns a path in temp dir
-	t.Setenv("HOME", tmpDir)
+	// Set XDG_CONFIG_HOME to temp dir so ConfigPath returns a path in temp dir
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	cfg, err := LoadConfig()
 	require.NoError(t, err)
@@ -31,16 +31,15 @@ func TestLoadConfigNoFile(t *testing.T) {
 	assert.Equal(t, "", cfg.Token)
 	assert.Equal(t, "", cfg.DerivedKey)
 	assert.Equal(t, "", cfg.DeviceID)
-	assert.True(t, cfg.AutoSync)
 	assert.Contains(t, cfg.VaultDB, "vault.db")
 }
 
 func TestLoadConfigValidFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Create config directory structure
-	configDir := filepath.Join(tmpDir, ".config", "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 	err := os.MkdirAll(configDir, 0750)
 	require.NoError(t, err)
 
@@ -56,7 +55,6 @@ func TestLoadConfigValidFile(t *testing.T) {
 		DerivedKey:   "test-key",
 		DeviceID:     "device-abc",
 		VaultDB:      "/tmp/vault.db",
-		AutoSync:     true,
 	}
 
 	data, err := json.MarshalIndent(validCfg, "", "  ")
@@ -75,15 +73,14 @@ func TestLoadConfigValidFile(t *testing.T) {
 	assert.Equal(t, validCfg.DerivedKey, cfg.DerivedKey)
 	assert.Equal(t, validCfg.DeviceID, cfg.DeviceID)
 	assert.Equal(t, validCfg.VaultDB, cfg.VaultDB)
-	assert.True(t, cfg.AutoSync)
 }
 
 func TestLoadConfigCorruptedFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Create config directory structure
-	configDir := filepath.Join(tmpDir, ".config", "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 	err := os.MkdirAll(configDir, 0750)
 	require.NoError(t, err)
 
@@ -113,7 +110,7 @@ func TestLoadConfigCorruptedFile(t *testing.T) {
 
 func TestSaveConfigAndRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	cfg := &Config{
 		Server:     "https://vault.example.com",
@@ -122,14 +119,13 @@ func TestSaveConfigAndRoundTrip(t *testing.T) {
 		DerivedKey: "derived-key-123",
 		DeviceID:   "device-456",
 		VaultDB:    "/tmp/vault.db",
-		AutoSync:   true,
 	}
 
 	err := SaveConfig(cfg)
 	require.NoError(t, err)
 
 	// Verify file exists
-	configPath := filepath.Join(tmpDir, ".config", "chronicle", "sync.json")
+	configPath := filepath.Join(tmpDir, "chronicle", "sync.json")
 	_, err = os.Stat(configPath)
 	require.NoError(t, err)
 
@@ -143,15 +139,14 @@ func TestSaveConfigAndRoundTrip(t *testing.T) {
 	assert.Equal(t, cfg.DerivedKey, loadedCfg.DerivedKey)
 	assert.Equal(t, cfg.DeviceID, loadedCfg.DeviceID)
 	assert.Equal(t, cfg.VaultDB, loadedCfg.VaultDB)
-	assert.True(t, loadedCfg.AutoSync)
 }
 
 func TestEnvOverrides(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Create config directory structure
-	configDir := filepath.Join(tmpDir, ".config", "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 	err := os.MkdirAll(configDir, 0750)
 	require.NoError(t, err)
 
@@ -164,7 +159,6 @@ func TestEnvOverrides(t *testing.T) {
 		Token:    "original-token",
 		DeviceID: "original-device",
 		VaultDB:  "/original/vault.db",
-		AutoSync: false,
 	}
 
 	data, err := json.MarshalIndent(baseCfg, "", "  ")
@@ -178,7 +172,6 @@ func TestEnvOverrides(t *testing.T) {
 	t.Setenv("CHRONICLE_USER_ID", "env-user")
 	t.Setenv("CHRONICLE_DEVICE_ID", "env-device")
 	t.Setenv("CHRONICLE_VAULT_DB", tmpDir+"/env-vault.db")
-	t.Setenv("CHRONICLE_AUTO_SYNC", "true")
 
 	cfg, err := LoadConfig()
 	require.NoError(t, err)
@@ -189,36 +182,6 @@ func TestEnvOverrides(t *testing.T) {
 	assert.Equal(t, "env-user", cfg.UserID)
 	assert.Equal(t, "env-device", cfg.DeviceID)
 	assert.Equal(t, tmpDir+"/env-vault.db", cfg.VaultDB)
-	assert.True(t, cfg.AutoSync)
-}
-
-func TestEnvAutoSyncVariations(t *testing.T) {
-	tests := []struct {
-		name     string
-		envValue string
-		expected bool
-	}{
-		{"true", "true", true},
-		{"1", "1", true},
-		{"false", "false", false},
-		{"0", "0", false},
-		{"empty", "", true}, // Default is true for chronicle
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			t.Setenv("HOME", tmpDir)
-
-			if tt.envValue != "" {
-				t.Setenv("CHRONICLE_AUTO_SYNC", tt.envValue)
-			}
-
-			cfg, err := LoadConfig()
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, cfg.AutoSync)
-		})
-	}
 }
 
 func TestIsConfigured(t *testing.T) {
@@ -293,7 +256,7 @@ func TestIsConfigured(t *testing.T) {
 
 func TestInitConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	cfg, err := InitConfig()
 	require.NoError(t, err)
@@ -304,7 +267,7 @@ func TestInitConfig(t *testing.T) {
 	assert.Len(t, cfg.DeviceID, 26) // ULID length
 
 	// Verify vault DB path
-	configDir := filepath.Join(tmpDir, ".config", "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 	assert.Equal(t, filepath.Join(configDir, "vault.db"), cfg.VaultDB)
 
 	// Verify file was created
@@ -320,7 +283,7 @@ func TestInitConfig(t *testing.T) {
 
 func TestConfigExists(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Should not exist initially
 	assert.False(t, ConfigExists())
@@ -336,10 +299,10 @@ func TestConfigExists(t *testing.T) {
 
 func TestConfigPathIsDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Create config directory structure
-	configDir := filepath.Join(tmpDir, ".config", "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 	err := os.MkdirAll(configDir, 0750)
 	require.NoError(t, err)
 
@@ -355,9 +318,9 @@ func TestConfigPathIsDirectory(t *testing.T) {
 
 func TestEnsureConfigDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	configDir := filepath.Join(tmpDir, ".config", "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 
 	// Should not exist
 	_, err := os.Stat(configDir)
@@ -375,17 +338,12 @@ func TestEnsureConfigDir(t *testing.T) {
 
 func TestEnsureConfigDirWhenFileExists(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	// Create .config dir but not chronicle subdirectory
-	configParent := filepath.Join(tmpDir, ".config")
-	err := os.MkdirAll(configParent, 0750)
-	require.NoError(t, err)
-
-	configDir := filepath.Join(configParent, "chronicle")
+	configDir := filepath.Join(tmpDir, "chronicle")
 
 	// Create a file where directory should be
-	err = os.WriteFile(configDir, []byte("test"), 0600)
+	err := os.WriteFile(configDir, []byte("test"), 0600)
 	require.NoError(t, err)
 
 	err = EnsureConfigDir()
@@ -397,7 +355,7 @@ func TestEnsureConfigDirWhenFileExists(t *testing.T) {
 	assert.True(t, info.IsDir())
 
 	// Verify backup exists
-	files, err := os.ReadDir(configParent)
+	files, err := os.ReadDir(tmpDir)
 	require.NoError(t, err)
 
 	foundBackup := false
@@ -452,9 +410,23 @@ func TestExpandPath(t *testing.T) {
 
 func TestConfigPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	path := ConfigPath()
-	expected := filepath.Join(tmpDir, ".config", "chronicle", "sync.json")
+	expected := filepath.Join(tmpDir, "chronicle", "sync.json")
 	assert.Equal(t, expected, path)
+}
+
+func TestConfigPathXDGTakesPrecedence(t *testing.T) {
+	xdgDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+	t.Setenv("HOME", homeDir)
+
+	path := ConfigPath()
+	// Should use XDG_CONFIG_HOME, not HOME/.config
+	expected := filepath.Join(xdgDir, "chronicle", "sync.json")
+	assert.Equal(t, expected, path)
+	assert.NotContains(t, path, homeDir)
 }

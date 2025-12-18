@@ -162,8 +162,32 @@ never sees your data in plaintext.`,
 		fmt.Printf("  User ID: %s\n", cfg.UserID)
 		fmt.Printf("  Device: %s\n", cfg.DeviceID[:8]+"...")
 		fmt.Printf("  Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
-		fmt.Printf("\nRun 'chronicle sync now' to sync your data.\n")
 
+		// Sync immediately after login to pull existing data
+		fmt.Println("\nSyncing existing data...")
+		dataHome := config.GetDataHome()
+		dbPath := filepath.Join(dataHome, "chronicle", "chronicle.db")
+		appDB, err := db.InitDB(dbPath)
+		if err != nil {
+			fmt.Printf("Warning: Could not sync: %v\n", err)
+			return nil
+		}
+		defer func() { _ = appDB.Close() }()
+
+		syncer, err := sync.NewSyncer(cfg, appDB)
+		if err != nil {
+			fmt.Printf("Warning: Could not sync: %v\n", err)
+			return nil
+		}
+		defer func() { _ = syncer.Close() }()
+
+		ctx := context.Background()
+		if err := syncer.Sync(ctx); err != nil {
+			fmt.Printf("Warning: Sync failed: %v\n", err)
+			return nil
+		}
+
+		fmt.Println("Sync complete")
 		return nil
 	},
 }
@@ -182,7 +206,6 @@ var syncStatusCmd = &cobra.Command{
 		fmt.Printf("User ID:   %s\n", valueOrNone(cfg.UserID))
 		fmt.Printf("Device ID: %s\n", valueOrNone(cfg.DeviceID))
 		fmt.Printf("Vault DB:  %s\n", valueOrNone(cfg.VaultDB))
-		fmt.Printf("Auto-sync: %v\n", cfg.AutoSync)
 
 		if cfg.DerivedKey != "" {
 			fmt.Println("Keys:      configured")
