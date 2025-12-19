@@ -1,5 +1,3 @@
-//go:build sqlite_fts5
-
 // ABOUTME: MCP prompt definitions for chronicle
 // ABOUTME: Provides static context to AI assistants about chronicle capabilities
 package mcp
@@ -32,6 +30,7 @@ Best practices:
 - Include enough detail to jog memory later
 - Think of it as a work journal that can be searched
 
+Chronicle syncs automatically across all your devices via Charm Cloud.
 The user has configured chronicle to track their development work and important decisions.`
 
 		result := &mcp.GetPromptResult{

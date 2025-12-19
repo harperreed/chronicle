@@ -1,20 +1,16 @@
 // ABOUTME: Add command for creating new log entries
-// ABOUTME: Handles message input and tag flags with optional sync
+// ABOUTME: Handles message input and tag flags with automatic Charm sync
 package cli
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/harper/chronicle/internal/charm"
 	"github.com/harper/chronicle/internal/config"
-	"github.com/harper/chronicle/internal/db"
 	"github.com/harper/chronicle/internal/logging"
-	"github.com/harper/chronicle/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -34,20 +30,16 @@ var addCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		message := args[0]
 
-		// Get database path
-		dataHome := config.GetDataHome()
-		dbPath := filepath.Join(dataHome, "chronicle", "chronicle.db")
-
-		// Open database
-		database, err := db.InitDB(dbPath)
-		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+		// Validate message is not empty
+		if message == "" {
+			return fmt.Errorf("message cannot be empty")
 		}
-		defer func() {
-			if closeErr := database.Close(); closeErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to close database: %v\n", closeErr)
-			}
-		}()
+
+		// Get Charm client
+		client, err := charm.GetClient()
+		if err != nil {
+			return fmt.Errorf("failed to connect to Charm: %w", err)
+		}
 
 		// Get metadata
 		hostname, err := os.Hostname()
@@ -63,8 +55,10 @@ var addCmd = &cobra.Command{
 			workingDir = unknownValue
 		}
 
-		// Create entry
-		entry := db.Entry{
+		// Create entry (set timestamp now for project logging)
+		now := time.Now()
+		entry := charm.Entry{
+			Timestamp:        now,
 			Message:          message,
 			Hostname:         hostname,
 			Username:         username,
@@ -72,27 +66,12 @@ var addCmd = &cobra.Command{
 			Tags:             tags,
 		}
 
-		id, err := db.CreateEntry(database, entry)
+		id, err := client.CreateEntry(entry)
 		if err != nil {
 			return fmt.Errorf("failed to create entry: %w", err)
 		}
 
-		// Update entry with the returned ID
-		entry.ID = id
-
-		// Fetch the specific entry we just created by ID to get its timestamp
-		err = database.QueryRow("SELECT timestamp FROM entries WHERE id = ?", id).Scan(&entry.Timestamp)
-		if err != nil {
-			// If we can't get timestamp, use current time as fallback
-			entry.Timestamp = time.Now()
-		}
-
 		fmt.Printf("Entry created (ID: %s)\n", id)
-
-		// Queue for sync (secondary, non-blocking)
-		if err := queueEntryToSync(cmd.Context(), database, entry); err != nil {
-			log.Printf("warning: sync queue failed: %v", err)
-		}
 
 		// Check for project logging
 		projectRoot, err := config.FindProjectRoot(workingDir)
@@ -101,7 +80,17 @@ var addCmd = &cobra.Command{
 			projectCfg, err := config.LoadProjectConfig(chroniclePath)
 			if err == nil && projectCfg.LocalLogging {
 				logDir := filepath.Join(projectRoot, projectCfg.LogDir)
-				if err := logging.WriteProjectLog(logDir, projectCfg.LogFormat, entry); err != nil {
+				// Convert charm.Entry to logging.Entry for project logging
+				logEntry := logging.Entry{
+					ID:               id,
+					Timestamp:        now,
+					Message:          entry.Message,
+					Hostname:         entry.Hostname,
+					Username:         entry.Username,
+					WorkingDirectory: entry.WorkingDirectory,
+					Tags:             entry.Tags,
+				}
+				if err := logging.WriteProjectLog(logDir, projectCfg.LogFormat, logEntry); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: failed to write project log: %v\n", err)
 				} else {
 					fmt.Printf("Project log updated: %s\n", logDir)
@@ -111,33 +100,6 @@ var addCmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-func queueEntryToSync(ctx context.Context, appDB *sql.DB, entry db.Entry) error {
-	cfg, err := sync.LoadConfig()
-	if err != nil {
-		return nil // No config, skip silently
-	}
-
-	if !cfg.IsConfigured() {
-		return nil // Not configured, skip silently
-	}
-
-	syncer, err := sync.NewSyncer(cfg, appDB)
-	if err != nil {
-		return fmt.Errorf("create syncer: %w", err)
-	}
-	defer func() {
-		if closeErr := syncer.Close(); closeErr != nil {
-			log.Printf("warning: failed to close syncer: %v", closeErr)
-		}
-	}()
-
-	if err := syncer.QueueEntryChange(ctx, entry, sync.OpUpsert); err != nil {
-		return fmt.Errorf("queue entry: %w", err)
-	}
-
-	return nil
 }
 
 func init() {

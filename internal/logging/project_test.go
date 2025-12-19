@@ -8,15 +8,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/harper/chronicle/internal/db"
 )
 
 func TestWriteProjectLog(t *testing.T) {
 	tmpDir := t.TempDir()
 	logDir := filepath.Join(tmpDir, "logs")
 
-	entry := db.Entry{
+	entry := Entry{
 		Timestamp:        time.Date(2025, 11, 29, 14, 30, 0, 0, time.UTC),
 		Message:          "test message",
 		Hostname:         "testhost",
@@ -57,7 +55,7 @@ func TestWriteProjectLogJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	logDir := filepath.Join(tmpDir, "logs")
 
-	entry := db.Entry{
+	entry := Entry{
 		Timestamp:        time.Date(2025, 11, 29, 14, 30, 0, 0, time.UTC),
 		Message:          "test message",
 		Hostname:         "testhost",
@@ -80,7 +78,7 @@ func TestWriteProjectLogJSON(t *testing.T) {
 
 	// Should contain JSON fields
 	contentStr := string(content)
-	if !strings.Contains(contentStr, `"Message"`) || !strings.Contains(contentStr, `"Tags"`) {
+	if !strings.Contains(contentStr, `"message"`) || !strings.Contains(contentStr, `"tags"`) {
 		t.Errorf("JSON output missing expected fields: %s", contentStr)
 	}
 }
@@ -89,7 +87,7 @@ func TestWriteProjectLogMultipleEntries(t *testing.T) {
 	tmpDir := t.TempDir()
 	logDir := filepath.Join(tmpDir, "logs")
 
-	entry1 := db.Entry{
+	entry1 := Entry{
 		Timestamp:        time.Date(2025, 11, 29, 10, 0, 0, 0, time.UTC),
 		Message:          "first entry",
 		Hostname:         "testhost",
@@ -98,7 +96,7 @@ func TestWriteProjectLogMultipleEntries(t *testing.T) {
 		Tags:             []string{"tag1"},
 	}
 
-	entry2 := db.Entry{
+	entry2 := Entry{
 		Timestamp:        time.Date(2025, 11, 29, 15, 0, 0, 0, time.UTC),
 		Message:          "second entry",
 		Hostname:         "testhost",

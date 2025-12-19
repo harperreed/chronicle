@@ -1,5 +1,3 @@
-//go:build sqlite_fts5
-
 // ABOUTME: MCP tool implementations for chronicle
 // ABOUTME: Provides low-level and high-level tools for logging and querying
 package mcp
@@ -10,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/harper/chronicle/internal/db"
+	"github.com/harper/chronicle/internal/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -127,13 +125,6 @@ func (s *Server) registerTools() {
 
 // handleAddEntry implements the add_entry tool.
 func (s *Server) handleAddEntry(ctx context.Context, req *mcp.CallToolRequest, input AddEntryInput) (*mcp.CallToolResult, AddEntryOutput, error) {
-	// Open database
-	database, err := db.InitDB(s.dbPath)
-	if err != nil {
-		return nil, AddEntryOutput{}, fmt.Errorf("failed to open database: %w", err)
-	}
-	defer func() { _ = database.Close() }()
-
 	// Get metadata
 	hostname, _ := os.Hostname()
 	if hostname == "" {
@@ -151,7 +142,7 @@ func (s *Server) handleAddEntry(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 
 	// Create entry
-	entry := db.Entry{
+	entry := charm.Entry{
 		Message:          input.Message,
 		Hostname:         hostname,
 		Username:         username,
@@ -159,16 +150,16 @@ func (s *Server) handleAddEntry(ctx context.Context, req *mcp.CallToolRequest, i
 		Tags:             input.Tags,
 	}
 
-	id, err := db.CreateEntry(database, entry)
+	id, err := s.client.CreateEntry(entry)
 	if err != nil {
 		return nil, AddEntryOutput{}, fmt.Errorf("failed to create entry: %w", err)
 	}
 
-	// Get timestamp
-	var timestamp string
-	err = database.QueryRow("SELECT datetime(timestamp) FROM entries WHERE id = ?", id).Scan(&timestamp)
-	if err != nil {
-		timestamp = "unknown"
+	// Get the created entry to get the timestamp
+	created, err := s.client.GetEntry(id)
+	timestamp := "unknown"
+	if err == nil && created != nil {
+		timestamp = created.Timestamp.Format("2006-01-02 15:04:05")
 	}
 
 	output := AddEntryOutput{
@@ -195,13 +186,7 @@ func (s *Server) handleListEntries(ctx context.Context, req *mcp.CallToolRequest
 		limit = 10
 	}
 
-	database, err := db.InitDB(s.dbPath)
-	if err != nil {
-		return nil, ListEntriesOutput{}, fmt.Errorf("failed to open database: %w", err)
-	}
-	defer func() { _ = database.Close() }()
-
-	entries, err := db.ListEntries(database, limit)
+	entries, err := s.client.ListEntries(limit)
 	if err != nil {
 		return nil, ListEntriesOutput{}, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -242,21 +227,12 @@ func (s *Server) handleSearchEntries(ctx context.Context, req *mcp.CallToolReque
 		limit = 20
 	}
 
-	database, err := db.InitDB(s.dbPath)
-	if err != nil {
-		return nil, ListEntriesOutput{}, fmt.Errorf("failed to open database: %w", err)
-	}
-	defer func() { _ = database.Close() }()
-
-	params := db.SearchParams{
-		Text:  input.Text,
-		Tags:  input.Tags,
-		Limit: limit,
+	filter := &charm.SearchFilter{
+		Text: input.Text,
+		Tags: input.Tags,
 	}
 
-	// TODO: Parse Since/Until dates - for now skip date parsing
-
-	entries, err := db.SearchEntries(database, params)
+	entries, err := s.client.SearchEntries(filter, limit)
 	if err != nil {
 		return nil, ListEntriesOutput{}, fmt.Errorf("failed to search entries: %w", err)
 	}

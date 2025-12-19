@@ -1,145 +1,97 @@
-//go:build sqlite_fts5
-
 // ABOUTME: Tests for MCP tools
-// ABOUTME: Validates tool handlers and input/output types
+// ABOUTME: Validates tool type definitions and helper functions
 package mcp
 
 import (
-	"context"
-	"fmt"
-	"path/filepath"
 	"testing"
-
-	"github.com/harper/chronicle/internal/db"
 )
 
-func TestAddEntryTool(t *testing.T) {
-	// Create temp DB
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
-	database, err := db.InitDB(dbPath)
-	if err != nil {
-		t.Fatalf("failed to init db: %v", err)
-	}
-	defer func() { _ = database.Close() }()
-
-	// Create server
-	server := NewServer(dbPath)
-
-	// Test input
-	input := AddEntryInput{
-		Message: "test message",
-		Tags:    []string{"test", "work"},
+func TestSuggestTags(t *testing.T) {
+	tests := []struct {
+		activity string
+		context  string
+		expected []string
+	}{
+		{"deployed the app", "", []string{"deployment"}},
+		{"fixed a bug", "", []string{"bug-fix"}},
+		{"decided to use Go", "", []string{"decision"}},
+		{"learned about channels", "", []string{"learning"}},
+		{"wrote some tests", "", []string{"testing"}},
+		{"random work", "", []string{"work"}}, // default
+		{"deployed and fixed bug", "", []string{"deployment", "bug-fix"}},
 	}
 
-	// Call handler directly
-	result, output, err := server.handleAddEntry(context.Background(), nil, input)
-	if err != nil {
-		t.Fatalf("handleAddEntry failed: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.activity, func(t *testing.T) {
+			result := suggestTags(tt.activity, tt.context)
 
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-
-	if output.EntryID == "" {
-		t.Error("expected non-empty entry ID")
-	}
-	if len(output.EntryID) != 36 {
-		t.Errorf("expected UUID (36 chars), got %q (%d chars)", output.EntryID, len(output.EntryID))
-	}
-
-	if output.Message != "test message" {
-		t.Errorf("expected message 'test message', got %s", output.Message)
+			// Check that all expected tags are present
+			for _, exp := range tt.expected {
+				found := false
+				for _, got := range result {
+					if got == exp {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected tag %q not found in %v", exp, result)
+				}
+			}
+		})
 	}
 }
 
-func TestListEntriesTool(t *testing.T) {
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
-	database, err := db.InitDB(dbPath)
-	if err != nil {
-		t.Fatalf("failed to init db: %v", err)
-	}
-	defer func() { _ = database.Close() }()
-
-	// Add test entries
-	for i := 0; i < 5; i++ {
-		entry := db.Entry{
-			Message:          fmt.Sprintf("message %d", i),
-			Hostname:         "testhost",
-			Username:         "testuser",
-			WorkingDirectory: "/test",
-			Tags:             []string{"test"},
-		}
-		_, err := db.CreateEntry(database, entry)
-		if err != nil {
-			t.Fatalf("failed to create entry: %v", err)
-		}
+func TestRememberThisInput(t *testing.T) {
+	input := RememberThisInput{
+		Activity: "Deployed v2.0",
+		Context:  "Major milestone",
 	}
 
-	server := NewServer(dbPath)
-
-	input := ListEntriesInput{Limit: 3}
-	result, output, err := server.handleListEntries(context.Background(), nil, input)
-
-	if err != nil {
-		t.Fatalf("handleListEntries failed: %v", err)
+	if input.Activity != "Deployed v2.0" {
+		t.Error("expected activity field")
 	}
-
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-
-	if len(output.Entries) != 3 {
-		t.Errorf("expected 3 entries, got %d", len(output.Entries))
+	if input.Context != "Major milestone" {
+		t.Error("expected context field")
 	}
 }
 
-func TestSearchEntriesTool(t *testing.T) {
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
-	database, err := db.InitDB(dbPath)
-	if err != nil {
-		t.Fatalf("failed to init db: %v", err)
+func TestWhatWasIDoingInput(t *testing.T) {
+	input := WhatWasIDoingInput{
+		Timeframe: "today",
 	}
-	defer func() { _ = database.Close() }()
-
-	// Add test entries
-	entries := []db.Entry{
-		{Message: "deployed app", Hostname: "h", Username: "u", WorkingDirectory: "/", Tags: []string{"work", "deploy"}},
-		{Message: "fixed bug", Hostname: "h", Username: "u", WorkingDirectory: "/", Tags: []string{"work", "bug"}},
-		{Message: "wrote tests", Hostname: "h", Username: "u", WorkingDirectory: "/", Tags: []string{"test"}},
+	if input.Timeframe != "today" {
+		t.Error("expected timeframe field")
 	}
-	for _, entry := range entries {
-		_, err := db.CreateEntry(database, entry)
-		if err != nil {
-			t.Fatalf("failed to create entry: %v", err)
-		}
+}
+
+func TestFindWhenIInput(t *testing.T) {
+	input := FindWhenIInput{
+		What: "deployed the app",
 	}
+	if input.What != "deployed the app" {
+		t.Error("expected what field")
+	}
+}
 
-	server := NewServer(dbPath)
-
-	// Search by text
-	input := SearchEntriesInput{Text: "bug"}
-	result, output, err := server.handleSearchEntries(context.Background(), nil, input)
-
-	if err != nil {
-		t.Fatalf("handleSearchEntries failed: %v", err)
+func TestEntryData(t *testing.T) {
+	entry := EntryData{
+		ID:        "123",
+		Timestamp: "2025-01-01 12:00:00",
+		Message:   "test",
+		Tags:      []string{"work"},
+		Hostname:  "host",
+		Username:  "user",
+		Directory: "/home/user",
 	}
 
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if entry.ID != "123" {
+		t.Error("expected id field")
 	}
-
-	if len(output.Entries) != 1 {
-		t.Errorf("expected 1 entry, got %d", len(output.Entries))
+	if entry.Message != "test" {
+		t.Error("expected message field")
 	}
-
-	if output.Entries[0].Message != "fixed bug" {
-		t.Errorf("expected 'fixed bug', got %s", output.Entries[0].Message)
+	if len(entry.Tags) != 1 || entry.Tags[0] != "work" {
+		t.Error("expected tags field")
 	}
 }

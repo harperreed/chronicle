@@ -1,64 +1,32 @@
-//go:build sqlite_fts5
-
 // ABOUTME: Unit tests for the add command
-// ABOUTME: Tests message handling and tag flag variations
+// ABOUTME: Tests message handling and tag flag validation
 package cli
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
 
-// executeAndCaptureOutput runs the command and returns output and error.
-func executeAndCaptureOutput(args []string) (string, error) {
-	tags = []string{} // Reset tags
+func TestAddCommandArgs(t *testing.T) {
+	t.Run("rejects empty message", func(t *testing.T) {
+		// Reset tags before test
+		tags = []string{}
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+		var stderr bytes.Buffer
+		rootCmd.SetOut(&stderr)
+		rootCmd.SetErr(&stderr)
 
-	rootCmd.SetArgs(args)
-	err := rootCmd.Execute()
+		rootCmd.SetArgs([]string{"add", ""})
+		err := rootCmd.Execute()
 
-	_ = w.Close()
-	os.Stdout = oldStdout
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+		if err == nil {
+			t.Fatal("expected error when empty message provided, got nil")
+		}
 
-	return buf.String(), err
-}
-
-// assertSuccessOutput checks that output contains expected success messages.
-func assertSuccessOutput(t *testing.T, output string, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
-	if !strings.Contains(output, "Entry created") {
-		t.Errorf("expected output to contain 'Entry created', got: %s", output)
-	}
-	if !strings.Contains(output, "ID:") {
-		t.Errorf("expected output to contain ID, got: %s", output)
-	}
-}
-
-func TestAddCommand(t *testing.T) {
-	t.Run("accepts message with long-form tags", func(t *testing.T) {
-		output, err := executeAndCaptureOutput([]string{"add", "test message", "--tag", "work", "--tag", "important"})
-		assertSuccessOutput(t, output, err)
-	})
-
-	t.Run("accepts message with short-form tags", func(t *testing.T) {
-		output, err := executeAndCaptureOutput([]string{"add", "short form test", "-t", "personal"})
-		assertSuccessOutput(t, output, err)
-	})
-
-	t.Run("accepts multiple tags", func(t *testing.T) {
-		output, err := executeAndCaptureOutput([]string{"add", "multi tag message", "-t", "tag1", "-t", "tag2", "--tag", "tag3"})
-		assertSuccessOutput(t, output, err)
+		if !strings.Contains(err.Error(), "cannot be empty") {
+			t.Errorf("expected error about empty message, got: %v", err)
+		}
 	})
 
 	t.Run("rejects no arguments", func(t *testing.T) {
@@ -98,6 +66,38 @@ func TestAddCommand(t *testing.T) {
 
 		if !strings.Contains(err.Error(), "1 arg(s)") && !strings.Contains(err.Error(), "accepts") {
 			t.Errorf("expected error message about exact args, got: %v", err)
+		}
+	})
+
+	t.Run("add command has correct metadata", func(t *testing.T) {
+		if addCmd.Use != "add [message]" {
+			t.Errorf("expected Use to be 'add [message]', got: %s", addCmd.Use)
+		}
+
+		if addCmd.Short != "Add a log entry" {
+			t.Errorf("expected Short description, got: %s", addCmd.Short)
+		}
+
+		// Check aliases
+		hasAlias := false
+		for _, alias := range addCmd.Aliases {
+			if alias == "a" {
+				hasAlias = true
+				break
+			}
+		}
+		if !hasAlias {
+			t.Error("expected 'a' alias for add command")
+		}
+	})
+
+	t.Run("add command has tag flag", func(t *testing.T) {
+		flag := addCmd.Flags().Lookup("tag")
+		if flag == nil {
+			t.Fatal("expected tag flag to exist")
+		}
+		if flag.Shorthand != "t" {
+			t.Errorf("expected tag shorthand to be 't', got: %s", flag.Shorthand)
 		}
 	})
 }

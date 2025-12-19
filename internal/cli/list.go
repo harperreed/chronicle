@@ -5,10 +5,8 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
-	"github.com/harper/chronicle/internal/config"
-	"github.com/harper/chronicle/internal/db"
+	"github.com/harper/chronicle/internal/charm"
 	"github.com/spf13/cobra"
 )
 
@@ -21,19 +19,14 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent entries",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get database path
-		dataHome := config.GetDataHome()
-		dbPath := filepath.Join(dataHome, "chronicle", "chronicle.db")
-
-		// Open database
-		database, err := db.InitDB(dbPath)
+		// Get Charm client
+		client, err := charm.GetClient()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return fmt.Errorf("failed to connect to Charm: %w", err)
 		}
-		defer func() { _ = database.Close() }()
 
 		// List entries
-		entries, err := db.ListEntries(database, listLimit)
+		entries, err := client.ListEntries(listLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list entries: %w", err)
 		}

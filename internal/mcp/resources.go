@@ -1,5 +1,3 @@
-//go:build sqlite_fts5
-
 // ABOUTME: MCP resource implementations for chronicle
 // ABOUTME: Provides dynamic queryable context about user's chronicle data
 package mcp
@@ -11,9 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/harper/chronicle/internal/charm"
 	"github.com/harper/chronicle/internal/config"
-	"github.com/harper/chronicle/internal/db"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -58,13 +57,7 @@ func (s *Server) registerResources() {
 
 // handleRecentActivity implements the recent-activity resource.
 func (s *Server) handleRecentActivity(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	database, err := db.InitDB(s.dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-	defer func() { _ = database.Close() }()
-
-	entries, err := db.ListEntries(database, 10)
+	entries, err := s.client.ListEntries(10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -89,27 +82,18 @@ func (s *Server) handleRecentActivity(ctx context.Context, req *mcp.ReadResource
 
 // handleTags implements the tags resource.
 func (s *Server) handleTags(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	database, err := db.InitDB(s.dbPath)
+	// Get all entries and count tags
+	entries, err := s.client.ListEntries(0) // 0 = no limit
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
-	defer func() { _ = database.Close() }()
 
-	// Query tag counts
-	rows, err := database.Query("SELECT tag, COUNT(*) as count FROM tags GROUP BY tag ORDER BY count DESC")
-	if err != nil {
-		return nil, fmt.Errorf("failed to query tags: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
+	// Count tag occurrences
 	tagCounts := make(map[string]int)
-	for rows.Next() {
-		var tag string
-		var count int
-		if err := rows.Scan(&tag, &count); err != nil {
-			return nil, err
+	for _, entry := range entries {
+		for _, tag := range entry.Tags {
+			tagCounts[tag]++
 		}
-		tagCounts[tag] = count
 	}
 
 	data, err := json.MarshalIndent(tagCounts, "", "  ")
@@ -132,40 +116,30 @@ func (s *Server) handleTags(ctx context.Context, req *mcp.ReadResourceRequest) (
 
 // handleTodaySummary implements the today-summary resource.
 func (s *Server) handleTodaySummary(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	database, err := db.InitDB(s.dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-	defer func() { _ = database.Close() }()
+	// Get entries from today
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	// Query today's entries
-	rows, err := database.Query(`
-		SELECT id, datetime(timestamp), message
-		FROM entries
-		WHERE date(timestamp) = date('now', 'localtime')
-		ORDER BY timestamp DESC
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query entries: %w", err)
+	filter := &charm.SearchFilter{
+		Since: &startOfDay,
 	}
-	defer func() { _ = rows.Close() }()
+
+	entries, err := s.client.SearchEntries(filter, 0) // 0 = no limit
+	if err != nil {
+		return nil, fmt.Errorf("failed to search entries: %w", err)
+	}
 
 	var summary strings.Builder
 	summary.WriteString("# Today's Activity\n\n")
 
-	count := 0
-	for rows.Next() {
-		var id int64
-		var timestamp, message string
-		if err := rows.Scan(&id, &timestamp, &message); err != nil {
-			return nil, err
-		}
-		summary.WriteString(fmt.Sprintf("- **%s**: %s\n", timestamp, message))
-		count++
-	}
-
-	if count == 0 {
+	if len(entries) == 0 {
 		summary.WriteString("No entries logged today yet.\n")
+	} else {
+		for _, entry := range entries {
+			summary.WriteString(fmt.Sprintf("- **%s**: %s\n",
+				entry.Timestamp.Format("15:04:05"),
+				entry.Message))
+		}
 	}
 
 	result := &mcp.ReadResourceResult{

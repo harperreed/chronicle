@@ -5,11 +5,9 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/araddon/dateparse"
-	"github.com/harper/chronicle/internal/config"
-	"github.com/harper/chronicle/internal/db"
+	"github.com/harper/chronicle/internal/charm"
 	"github.com/spf13/cobra"
 )
 
@@ -26,25 +24,19 @@ var searchCmd = &cobra.Command{
 	Short: "Search entries",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get database path
-		dataHome := config.GetDataHome()
-		dbPath := filepath.Join(dataHome, "chronicle", "chronicle.db")
-
-		// Open database
-		database, err := db.InitDB(dbPath)
+		// Get Charm client
+		client, err := charm.GetClient()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return fmt.Errorf("failed to connect to Charm: %w", err)
 		}
-		defer func() { _ = database.Close() }()
 
-		// Build search params
-		params := db.SearchParams{
-			Tags:  searchTags,
-			Limit: searchLimit,
+		// Build search filter
+		filter := &charm.SearchFilter{
+			Tags: searchTags,
 		}
 
 		if len(args) > 0 {
-			params.Text = args[0]
+			filter.Text = args[0]
 		}
 
 		// Parse dates
@@ -53,7 +45,7 @@ var searchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("invalid --since date: %w", err)
 			}
-			params.Since = &since
+			filter.Since = &since
 		}
 
 		if searchUntil != "" {
@@ -61,11 +53,11 @@ var searchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("invalid --until date: %w", err)
 			}
-			params.Until = &until
+			filter.Until = &until
 		}
 
 		// Search
-		entries, err := db.SearchEntries(database, params)
+		entries, err := client.SearchEntries(filter, searchLimit)
 		if err != nil {
 			return fmt.Errorf("failed to search entries: %w", err)
 		}

@@ -8,12 +8,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/harper/chronicle/internal/db"
+	"time"
 )
 
+// Entry represents a log entry for project logging.
+type Entry struct {
+	ID               string    `json:"id"`
+	Timestamp        time.Time `json:"timestamp"`
+	Message          string    `json:"message"`
+	Hostname         string    `json:"hostname"`
+	Username         string    `json:"username"`
+	WorkingDirectory string    `json:"working_directory"`
+	Tags             []string  `json:"tags"`
+}
+
 // WriteProjectLog appends entry to project log file.
-func WriteProjectLog(logDir, format string, entry db.Entry) error {
+func WriteProjectLog(logDir, format string, entry Entry) error {
 	// Validate timestamp is not zero
 	if entry.Timestamp.IsZero() {
 		return fmt.Errorf("entry timestamp is zero")
@@ -57,7 +67,7 @@ func WriteProjectLog(logDir, format string, entry db.Entry) error {
 	return err
 }
 
-func formatMarkdown(entry db.Entry) string {
+func formatMarkdown(entry Entry) string {
 	var sb strings.Builder
 
 	timeStr := entry.Timestamp.Format("15:04:05")
