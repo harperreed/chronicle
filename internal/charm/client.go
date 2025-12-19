@@ -70,7 +70,8 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	// Open KV with defaults (uses CHARM_HOST env or charm.2389.dev)
-	db, err := kv.OpenWithDefaults(DBName)
+	// Falls back to read-only mode if another process holds the lock
+	db, err := kv.OpenWithDefaultsFallback(DBName)
 	if err != nil {
 		return nil, fmt.Errorf("open charm kv: %w", err)
 	}
@@ -81,8 +82,8 @@ func NewClient(cfg *Config) (*Client, error) {
 		config: cfg,
 	}
 
-	// Pull remote data on startup
-	if cfg.AutoSync {
+	// Pull remote data on startup (skip in read-only mode)
+	if cfg.AutoSync && !db.IsReadOnly() {
 		_ = db.Sync()
 	}
 
@@ -105,14 +106,24 @@ func (c *Client) ID() (string, error) {
 	return c.cc.ID()
 }
 
+// IsReadOnly returns true if the database is open in read-only mode.
+// This happens when another process (like an MCP server) holds the lock.
+func (c *Client) IsReadOnly() bool {
+	return c.kv.IsReadOnly()
+}
+
 // Sync syncs with the Charm Cloud.
+// Skips sync if in read-only mode.
 func (c *Client) Sync() error {
+	if c.IsReadOnly() {
+		return nil
+	}
 	return c.kv.Sync()
 }
 
-// syncIfEnabled syncs if auto-sync is enabled.
+// syncIfEnabled syncs if auto-sync is enabled and not in read-only mode.
 func (c *Client) syncIfEnabled() {
-	if c.config.AutoSync {
+	if c.config.AutoSync && !c.IsReadOnly() {
 		_ = c.kv.Sync()
 	}
 }
@@ -124,6 +135,9 @@ func (c *Client) Reset() error {
 
 // Set stores a key-value pair.
 func (c *Client) Set(key, value []byte) error {
+	if c.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
 	if err := c.kv.Set(key, value); err != nil {
 		return err
 	}
@@ -138,6 +152,9 @@ func (c *Client) Get(key []byte) ([]byte, error) {
 
 // Delete removes a key.
 func (c *Client) Delete(key []byte) error {
+	if c.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
 	if err := c.kv.Delete(key); err != nil {
 		return err
 	}
