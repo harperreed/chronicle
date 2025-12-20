@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
 	"github.com/google/uuid"
 )
 
@@ -96,34 +95,38 @@ type SearchFilter struct {
 func (c *Client) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) {
 	var entries []Entry
 
-	err := c.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		prefix := []byte(EntryPrefix)
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			err := item.Value(func(val []byte) error {
-				var entry Entry
-				if err := json.Unmarshal(val, &entry); err != nil {
-					// Skip invalid entries (corrupted data) - intentionally ignoring error
-					return nil //nolint:nilerr
-				}
-
-				if matchesFilter(&entry, filter) {
-					entries = append(entries, entry)
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
+	// Get all keys from the KV store
+	keys, err := c.kv.Keys()
 	if err != nil {
-		return nil, fmt.Errorf("search entries: %w", err)
+		return nil, fmt.Errorf("get keys: %w", err)
+	}
+
+	// Filter keys by entry prefix and fetch matching entries
+	prefix := []byte(EntryPrefix)
+	for _, key := range keys {
+		// Skip keys that don't have the entry prefix
+		if !strings.HasPrefix(string(key), string(prefix)) {
+			continue
+		}
+
+		// Fetch the entry value
+		val, err := c.Get(key)
+		if err != nil {
+			// Skip entries that can't be fetched
+			continue
+		}
+
+		// Unmarshal the entry
+		var entry Entry
+		if err := json.Unmarshal(val, &entry); err != nil {
+			// Skip invalid entries (corrupted data)
+			continue
+		}
+
+		// Apply filter
+		if matchesFilter(&entry, filter) {
+			entries = append(entries, entry)
+		}
 	}
 
 	// Sort by timestamp descending

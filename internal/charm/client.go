@@ -10,7 +10,6 @@ import (
 
 	"github.com/charmbracelet/charm/client"
 	"github.com/charmbracelet/charm/kv"
-	"github.com/dgraph-io/badger/v3"
 )
 
 const (
@@ -160,11 +159,6 @@ func (c *Client) Delete(key []byte) error {
 	}
 	c.syncIfEnabled()
 	return nil
-}
-
-// View executes a read-only transaction.
-func (c *Client) View(fn func(txn *badger.Txn) error) error {
-	return c.kv.View(fn)
 }
 
 // SetJSON stores a JSON-serialized value.

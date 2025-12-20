@@ -11,7 +11,6 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/charmbracelet/charm v0.0.0-00010101000000-000000000000
-	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.1.0
@@ -31,6 +30,7 @@ require (
 	github.com/charmbracelet/log v0.2.2 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/dgraph-io/badger/v3 v3.2103.2 // indirect
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
