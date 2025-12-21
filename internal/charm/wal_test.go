@@ -31,7 +31,7 @@ func TestWALConcurrentConnections(t *testing.T) {
 
 	for i := 0; i < numConnections; i++ {
 		wg.Add(1)
-		go func(connID int) {
+		go func() {
 			defer wg.Done()
 
 			// Each goroutine opens its own KV (simulates separate processes)
@@ -50,14 +50,14 @@ func TestWALConcurrentConnections(t *testing.T) {
 					errors <- err
 				}
 			}
-		}(i)
+		}()
 	}
 
 	wg.Wait()
 	close(errors)
 
 	// Collect any errors
-	var errs []error
+	errs := make([]error, 0, numConnections*writesPerConnection)
 	for err := range errors {
 		errs = append(errs, err)
 	}
