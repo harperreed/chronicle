@@ -132,6 +132,21 @@ func (c *Client) Reset() error {
 	return c.kv.Reset()
 }
 
+// Repair attempts to repair database corruption.
+func (c *Client) Repair(force bool) (*kv.RepairResult, error) {
+	return kv.Repair(DBName, force)
+}
+
+// ResetDB resets the database to a clean state.
+func (c *Client) ResetDB() error {
+	return kv.Reset(DBName)
+}
+
+// Wipe completely wipes all data including cloud backups.
+func (c *Client) Wipe() (*kv.WipeResult, error) {
+	return kv.Wipe(DBName)
+}
+
 // Set stores a key-value pair.
 func (c *Client) Set(key, value []byte) error {
 	if c.IsReadOnly() {

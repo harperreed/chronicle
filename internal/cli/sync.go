@@ -26,11 +26,14 @@ Commands:
   status  - Show sync status and Charm user ID
   link    - Link this device to another Charm account
   unlink  - Disconnect this device from Charm
-  wipe    - Clear all sync data and start fresh
+  repair  - Repair database corruption
+  reset   - Reset database to clean state
+  wipe    - Completely wipe all data including cloud backups
 
 Examples:
   chronicle sync status
-  chronicle sync link`,
+  chronicle sync link
+  chronicle sync repair --force`,
 }
 
 var syncStatusCmd = &cobra.Command{
@@ -142,17 +145,114 @@ var syncUnlinkCmd = &cobra.Command{
 	},
 }
 
-var syncWipeCmd = &cobra.Command{
-	Use:   "wipe",
-	Short: "Wipe all sync data and start fresh",
+var (
+	repairForce bool
+)
+
+var syncRepairCmd = &cobra.Command{
+	Use:   "repair",
+	Short: "Repair database corruption",
+	Long: `Attempt to repair database corruption issues.
+
+This runs SQLite integrity checks and repairs:
+- WAL checkpoint
+- Remove shared memory file
+- Integrity check
+- VACUUM
+
+Use --force to attempt repair even if the database appears healthy.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := charm.GetClient()
 		if err != nil {
 			return fmt.Errorf("not connected to Charm: %w", err)
 		}
 
-		fmt.Println("This will DELETE all chronicle data from Charm Cloud.")
-		fmt.Println("Your entries will be wiped from all linked devices.")
+		fmt.Println("Running database repair...")
+		result, err := c.Repair(repairForce)
+		if err != nil {
+			return fmt.Errorf("repair failed: %w", err)
+		}
+
+		// Display repair results
+		fmt.Println("\nRepair Results:")
+		fmt.Printf("  WAL Checkpointed: %v\n", result.WalCheckpointed)
+		fmt.Printf("  SHM Removed:      %v\n", result.ShmRemoved)
+		fmt.Printf("  Integrity OK:     %v\n", result.IntegrityOK)
+		fmt.Printf("  Vacuumed:         %v\n", result.Vacuumed)
+
+		if result.IntegrityOK {
+			color.Green("\nDatabase is healthy!")
+		} else {
+			color.Yellow("\nWarning: Database may still have issues.")
+		}
+
+		return nil
+	},
+}
+
+var syncResetCmd = &cobra.Command{
+	Use:   "reset",
+	Short: "Reset database to clean state",
+	Long: `Reset the local database to a clean state.
+
+This will:
+- Delete all local chronicle data
+- Re-sync from Charm Cloud
+
+Your cloud data will NOT be affected.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := charm.GetClient()
+		if err != nil {
+			return fmt.Errorf("not connected to Charm: %w", err)
+		}
+
+		fmt.Println("This will delete all local chronicle data and re-sync from cloud.")
+		fmt.Print("Continue? [y/N]: ")
+
+		reader := bufio.NewReader(os.Stdin)
+		confirmation, _ := reader.ReadString('\n')
+		confirmation = strings.TrimSpace(strings.ToLower(confirmation))
+
+		if confirmation != "y" && confirmation != "yes" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+
+		fmt.Println("\nResetting database...")
+		if err := c.ResetDB(); err != nil {
+			return fmt.Errorf("reset failed: %w", err)
+		}
+
+		color.Green("Reset complete!")
+		fmt.Println("Database has been reset and re-synced from cloud.")
+
+		return nil
+	},
+}
+
+var syncWipeCmd = &cobra.Command{
+	Use:   "wipe",
+	Short: "Completely wipe all data including cloud backups",
+	Long: `Completely wipe all chronicle data from everywhere.
+
+This will:
+- Delete all local chronicle data
+- Delete all cloud backups
+- Remove data from all linked devices
+
+THIS CANNOT BE UNDONE!`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := charm.GetClient()
+		if err != nil {
+			return fmt.Errorf("not connected to Charm: %w", err)
+		}
+
+		fmt.Println("This will DELETE all chronicle data from EVERYWHERE.")
+		fmt.Println("This includes:")
+		fmt.Println("  - All local data")
+		fmt.Println("  - All cloud backups")
+		fmt.Println("  - Data on all linked devices")
+		fmt.Println("\nTHIS CANNOT BE UNDONE!")
 		fmt.Print("\nType 'wipe' to confirm: ")
 
 		reader := bufio.NewReader(os.Stdin)
@@ -165,21 +265,29 @@ var syncWipeCmd = &cobra.Command{
 		}
 
 		fmt.Println("\nWiping all chronicle data...")
-		if err := c.Reset(); err != nil {
+		result, err := c.Wipe()
+		if err != nil {
 			return fmt.Errorf("wipe failed: %w", err)
 		}
 
+		fmt.Printf("Cloud backups deleted: %d\n", result.CloudBackupsDeleted)
+		fmt.Printf("Local files deleted:   %d\n", result.LocalFilesDeleted)
 		color.Green("Wipe complete!")
-		fmt.Println("All chronicle entries have been deleted.")
+		fmt.Println("All chronicle data has been permanently deleted.")
 
 		return nil
 	},
 }
 
 func init() {
+	// Add --force flag to repair command
+	syncRepairCmd.Flags().BoolVarP(&repairForce, "force", "f", false, "Force repair even if database appears healthy")
+
 	syncCmd.AddCommand(syncStatusCmd)
 	syncCmd.AddCommand(syncLinkCmd)
 	syncCmd.AddCommand(syncUnlinkCmd)
+	syncCmd.AddCommand(syncRepairCmd)
+	syncCmd.AddCommand(syncResetCmd)
 	syncCmd.AddCommand(syncWipeCmd)
 
 	rootCmd.AddCommand(syncCmd)
