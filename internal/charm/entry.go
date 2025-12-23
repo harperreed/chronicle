@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/charm/kv"
 	"github.com/google/uuid"
 )
 
@@ -95,38 +96,47 @@ type SearchFilter struct {
 func (c *Client) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) {
 	var entries []Entry
 
-	// Get all keys from the KV store
-	keys, err := c.kv.Keys()
-	if err != nil {
-		return nil, fmt.Errorf("get keys: %w", err)
-	}
-
-	// Filter keys by entry prefix and fetch matching entries
-	prefix := []byte(EntryPrefix)
-	for _, key := range keys {
-		// Skip keys that don't have the entry prefix
-		if !strings.HasPrefix(string(key), string(prefix)) {
-			continue
-		}
-
-		// Fetch the entry value
-		val, err := c.Get(key)
+	// Use DoReadOnly for batch read operation
+	err := c.DoReadOnly(func(k *kv.KV) error {
+		// Get all keys from the KV store
+		keys, err := k.Keys()
 		if err != nil {
-			// Skip entries that can't be fetched
-			continue
+			return fmt.Errorf("get keys: %w", err)
 		}
 
-		// Unmarshal the entry
-		var entry Entry
-		if err := json.Unmarshal(val, &entry); err != nil {
-			// Skip invalid entries (corrupted data)
-			continue
+		// Filter keys by entry prefix and fetch matching entries
+		prefix := []byte(EntryPrefix)
+		for _, key := range keys {
+			// Skip keys that don't have the entry prefix
+			if !strings.HasPrefix(string(key), string(prefix)) {
+				continue
+			}
+
+			// Fetch the entry value
+			val, err := k.Get(key)
+			if err != nil {
+				// Skip entries that can't be fetched
+				continue
+			}
+
+			// Unmarshal the entry
+			var entry Entry
+			if err := json.Unmarshal(val, &entry); err != nil {
+				// Skip invalid entries (corrupted data)
+				continue
+			}
+
+			// Apply filter
+			if matchesFilter(&entry, filter) {
+				entries = append(entries, entry)
+			}
 		}
 
-		// Apply filter
-		if matchesFilter(&entry, filter) {
-			entries = append(entries, entry)
-		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	// Sort by timestamp descending
