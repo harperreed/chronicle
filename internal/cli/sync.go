@@ -160,30 +160,46 @@ This runs SQLite integrity checks and repairs:
 - Integrity check
 - VACUUM
 
-Use --force to attempt repair even if the database appears healthy.`,
+Use --force to attempt recovery and cloud reset if corruption persists.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := charm.GetClient()
-		if err != nil {
-			return fmt.Errorf("not connected to Charm: %w", err)
-		}
+		fmt.Println("Repairing chronicle database...")
 
-		fmt.Println("Running database repair...")
-		result, err := c.Repair(repairForce)
+		// Call repair directly without opening the client
+		// This works even when the database is too corrupted to open normally
+		result, err := charm.RepairDB(repairForce)
 		if err != nil {
 			return fmt.Errorf("repair failed: %w", err)
 		}
 
-		// Display repair results
-		fmt.Println("\nRepair Results:")
-		fmt.Printf("  WAL Checkpointed: %v\n", result.WalCheckpointed)
-		fmt.Printf("  SHM Removed:      %v\n", result.ShmRemoved)
-		fmt.Printf("  Integrity OK:     %v\n", result.IntegrityOK)
-		fmt.Printf("  Vacuumed:         %v\n", result.Vacuumed)
-
+		// Display repair results with checkmarks
+		if result.WalCheckpointed {
+			color.Green("  ✓ WAL checkpointed")
+		}
+		if result.ShmRemoved {
+			color.Green("  ✓ SHM file removed")
+		}
 		if result.IntegrityOK {
-			color.Green("\nDatabase is healthy!")
+			color.Green("  ✓ Integrity check passed")
 		} else {
-			color.Yellow("\nWarning: Database may still have issues.")
+			color.Red("  ✗ Integrity check failed")
+		}
+		if result.Vacuumed {
+			color.Green("  ✓ Database vacuumed")
+		}
+		if result.RecoveryAttempted {
+			color.Yellow("  ! Recovery attempted")
+		}
+		if result.ResetFromCloud {
+			color.Green("  ✓ Reset from cloud")
+		}
+
+		fmt.Println()
+		if result.IntegrityOK {
+			color.Green("Repair complete.")
+		} else if !repairForce {
+			color.Yellow("Repair incomplete. Run with --force to attempt recovery and cloud reset.")
+		} else {
+			color.Red("Repair failed. Database may be unrecoverable.")
 		}
 
 		return nil
@@ -199,13 +215,9 @@ This will:
 - Delete all local chronicle data
 - Re-sync from Charm Cloud
 
-Your cloud data will NOT be affected.`,
+Your cloud data will NOT be affected.
+This works even when the database is corrupted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := charm.GetClient()
-		if err != nil {
-			return fmt.Errorf("not connected to Charm: %w", err)
-		}
-
 		fmt.Println("This will delete all local chronicle data and re-sync from cloud.")
 		fmt.Print("Continue? [y/N]: ")
 
@@ -219,7 +231,9 @@ Your cloud data will NOT be affected.`,
 		}
 
 		fmt.Println("\nResetting database...")
-		if err := c.ResetDB(); err != nil {
+		// Call reset directly without opening the client
+		// This works even when the database is too corrupted to open normally
+		if err := charm.ResetDBFromCloud(); err != nil {
 			return fmt.Errorf("reset failed: %w", err)
 		}
 

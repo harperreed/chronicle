@@ -207,3 +207,15 @@ func GetCharmHost() string {
 	}
 	return "charm.2389.dev"
 }
+
+// RepairDB attempts to repair a corrupted database without opening it.
+// This can be called even when the database is too corrupted to open normally.
+func RepairDB(force bool) (*kv.RepairResult, error) {
+	return kv.Repair(DBName, force)
+}
+
+// ResetDBFromCloud resets the database without requiring an open client.
+// This deletes local data and re-syncs from cloud.
+func ResetDBFromCloud() error {
+	return kv.Reset(DBName)
+}
