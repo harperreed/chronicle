@@ -11,6 +11,9 @@ import (
 )
 
 func TestWALConcurrentConnections(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	// Test that multiple KV connections can open the same database concurrently.
 	// This verifies the WAL mode fix prevents SQLITE_BUSY errors.
 	tmpDir := t.TempDir()
