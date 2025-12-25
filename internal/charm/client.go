@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/charmbracelet/charm/client"
 	"github.com/charmbracelet/charm/kv"
@@ -25,8 +26,9 @@ const (
 // Unlike the previous implementation, it does NOT hold a persistent connection.
 // Each operation opens the database, performs the operation, and closes it.
 type Client struct {
-	dbName   string
-	autoSync bool
+	dbName         string
+	autoSync       bool
+	staleThreshold time.Duration
 }
 
 // Option configures a Client.
@@ -64,14 +66,22 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	c := &Client{
-		dbName:   DBName,
-		autoSync: cfg.AutoSync,
+		dbName:         DBName,
+		autoSync:       cfg.AutoSync,
+		staleThreshold: cfg.StaleThreshold,
 	}
 	return c, nil
 }
 
 // Get retrieves a value by key (read-only, no lock contention).
+// Syncs first if data is stale (last sync > threshold).
 func (c *Client) Get(key []byte) ([]byte, error) {
+	// Sync if stale before reading
+	if err := c.SyncIfStale(); err != nil {
+		// Log but don't fail - stale data is better than no data
+		fmt.Fprintf(os.Stderr, "warning: stale sync failed: %v\n", err)
+	}
+
 	var val []byte
 	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
 		var err error
@@ -108,7 +118,14 @@ func (c *Client) Delete(key []byte) error {
 }
 
 // Keys returns all keys in the database.
+// Syncs first if data is stale (last sync > threshold).
 func (c *Client) Keys() ([][]byte, error) {
+	// Sync if stale before reading
+	if err := c.SyncIfStale(); err != nil {
+		// Log but don't fail - stale data is better than no data
+		fmt.Fprintf(os.Stderr, "warning: stale sync failed: %v\n", err)
+	}
+
 	var keys [][]byte
 	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
 		var err error
@@ -120,7 +137,14 @@ func (c *Client) Keys() ([][]byte, error) {
 
 // DoReadOnly executes a function with read-only database access.
 // Use this for batch read operations that need multiple Gets.
+// Syncs first if data is stale (last sync > threshold).
 func (c *Client) DoReadOnly(fn func(k *kv.KV) error) error {
+	// Sync if stale before reading
+	if err := c.SyncIfStale(); err != nil {
+		// Log but don't fail - stale data is better than no data
+		fmt.Fprintf(os.Stderr, "warning: stale sync failed: %v\n", err)
+	}
+
 	return kv.DoReadOnly(c.dbName, fn)
 }
 
@@ -139,10 +163,44 @@ func (c *Client) Do(fn func(k *kv.KV) error) error {
 }
 
 // Sync triggers a manual sync with the charm server.
+// The charm library automatically records the sync timestamp.
 func (c *Client) Sync() error {
 	return kv.Do(c.dbName, func(k *kv.KV) error {
 		return k.Sync()
 	})
+}
+
+// LastSyncTime returns when the database was last synced.
+func (c *Client) LastSyncTime() time.Time {
+	var lastSync time.Time
+	_ = kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		lastSync = k.LastSyncTime()
+		return nil
+	})
+	return lastSync
+}
+
+// IsStale returns true if the last sync was longer ago than the stale threshold.
+func (c *Client) IsStale() bool {
+	if c.staleThreshold == 0 {
+		return false // Stale sync disabled
+	}
+	var isStale bool
+	_ = kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		isStale = k.IsStale(c.staleThreshold)
+		return nil
+	})
+	return isStale
+}
+
+// SyncIfStale syncs with the server if the data is stale.
+// Returns nil if no sync was needed or sync succeeded.
+func (c *Client) SyncIfStale() error {
+	if !c.IsStale() {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "Data stale (last sync > %v ago), syncing...\n", c.staleThreshold)
+	return c.Sync()
 }
 
 // Reset clears all data (nuclear option).

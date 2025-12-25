@@ -1,5 +1,5 @@
-github.com/2389-research/charm v0.18.0 h1:0TWyoK9EiW4kGt/9NuRJBtUC1p/k2BYP7Z/tS3T29XQ=
-github.com/2389-research/charm v0.18.0/go.mod h1:hXtIW7xMslPJ4WBrdNyG6E4JZKFIEfgvGv8OvOKbrgc=
+github.com/2389-research/charm v0.19.0 h1:bfUm3E6YJ3fdS9yl4FWuR6Ssk/ctUDmtQr2DzGUjNwM=
+github.com/2389-research/charm v0.19.0/go.mod h1:hXtIW7xMslPJ4WBrdNyG6E4JZKFIEfgvGv8OvOKbrgc=
 github.com/BurntSushi/toml v1.5.0 h1:W5quZX/G/csjUnuI8SUYlsHs9M38FC7znL0lIO+DvMg=
 github.com/BurntSushi/toml v1.5.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFIImctFaOjnTIavg87rW78vTPkQqLI8=

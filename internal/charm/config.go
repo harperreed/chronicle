@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/charmbracelet/charm/kv"
 )
 
 // Config holds charm sync configuration.
@@ -16,13 +19,17 @@ type Config struct {
 
 	// AutoSync enables automatic sync after writes (default: true)
 	AutoSync bool `json:"auto_sync"`
+
+	// StaleThreshold is the duration after which data is considered stale
+	StaleThreshold time.Duration `json:"stale_threshold,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		CharmHost: "charm.2389.dev",
-		AutoSync:  true,
+		CharmHost:      "charm.2389.dev",
+		AutoSync:       true,
+		StaleThreshold: kv.DefaultStaleThreshold,
 	}
 }
 
