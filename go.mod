@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.11
 
 // Use self-hosted Charm fork for KV sync with read-only fallback and stale sync support
-replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.19.0
+replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.20.0
 
 require (
 	github.com/BurntSushi/toml v1.5.0
