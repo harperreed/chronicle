@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/harper/chronicle/internal/charm"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -19,14 +19,15 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent entries",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get Charm client
-		client, err := charm.GetClient()
+		// Get storage
+		store, err := storage.NewStore(storage.DefaultPath())
 		if err != nil {
-			return fmt.Errorf("failed to connect to Charm: %w", err)
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
+		defer func() { _ = store.Close() }()
 
 		// List entries
-		entries, err := client.ListEntries(listLimit)
+		entries, err := store.ListEntries(listLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list entries: %w", err)
 		}

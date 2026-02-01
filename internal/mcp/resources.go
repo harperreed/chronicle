@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harper/chronicle/internal/charm"
 	"github.com/harper/chronicle/internal/config"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -57,7 +57,7 @@ func (s *Server) registerResources() {
 
 // handleRecentActivity implements the recent-activity resource.
 func (s *Server) handleRecentActivity(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	entries, err := s.client.ListEntries(10)
+	entries, err := s.store.ListEntries(10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -83,7 +83,7 @@ func (s *Server) handleRecentActivity(ctx context.Context, req *mcp.ReadResource
 // handleTags implements the tags resource.
 func (s *Server) handleTags(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	// Get all entries and count tags
-	entries, err := s.client.ListEntries(0) // 0 = no limit
+	entries, err := s.store.ListEntries(0) // 0 = no limit
 	if err != nil {
 		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -120,11 +120,11 @@ func (s *Server) handleTodaySummary(ctx context.Context, req *mcp.ReadResourceRe
 	now := time.Now()
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	filter := &charm.SearchFilter{
+	filter := &storage.SearchFilter{
 		Since: &startOfDay,
 	}
 
-	entries, err := s.client.SearchEntries(filter, 0) // 0 = no limit
+	entries, err := s.store.SearchEntries(filter, 0) // 0 = no limit
 	if err != nil {
 		return nil, fmt.Errorf("failed to search entries: %w", err)
 	}

@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/harper/chronicle/internal/charm"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -142,7 +142,7 @@ func (s *Server) handleAddEntry(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 
 	// Create entry
-	entry := charm.Entry{
+	entry := storage.Entry{
 		Message:          input.Message,
 		Hostname:         hostname,
 		Username:         username,
@@ -150,13 +150,13 @@ func (s *Server) handleAddEntry(ctx context.Context, req *mcp.CallToolRequest, i
 		Tags:             input.Tags,
 	}
 
-	id, err := s.client.CreateEntry(entry)
+	id, err := s.store.CreateEntry(entry)
 	if err != nil {
 		return nil, AddEntryOutput{}, fmt.Errorf("failed to create entry: %w", err)
 	}
 
 	// Get the created entry to get the timestamp
-	created, err := s.client.GetEntry(id)
+	created, err := s.store.GetEntry(id)
 	timestamp := "unknown"
 	if err == nil && created != nil {
 		timestamp = created.Timestamp.Format("2006-01-02 15:04:05")
@@ -186,7 +186,7 @@ func (s *Server) handleListEntries(ctx context.Context, req *mcp.CallToolRequest
 		limit = 10
 	}
 
-	entries, err := s.client.ListEntries(limit)
+	entries, err := s.store.ListEntries(limit)
 	if err != nil {
 		return nil, ListEntriesOutput{}, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -227,12 +227,12 @@ func (s *Server) handleSearchEntries(ctx context.Context, req *mcp.CallToolReque
 		limit = 20
 	}
 
-	filter := &charm.SearchFilter{
+	filter := &storage.SearchFilter{
 		Text: input.Text,
 		Tags: input.Tags,
 	}
 
-	entries, err := s.client.SearchEntries(filter, limit)
+	entries, err := s.store.SearchEntries(filter, limit)
 	if err != nil {
 		return nil, ListEntriesOutput{}, fmt.Errorf("failed to search entries: %w", err)
 	}

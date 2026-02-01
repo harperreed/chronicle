@@ -5,32 +5,32 @@ package mcp
 import (
 	"context"
 
-	"github.com/harper/chronicle/internal/charm"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Server wraps the MCP server with chronicle-specific functionality.
 type Server struct {
 	mcpServer *mcp.Server
-	client    *charm.Client
+	store     *storage.Store
 }
 
 // NewServer creates a new chronicle MCP server.
 func NewServer() (*Server, error) {
 	impl := &mcp.Implementation{
 		Name:    "chronicle",
-		Version: "0.2.0",
+		Version: "0.3.0",
 	}
 
-	// Get Charm client
-	client, err := charm.GetClient()
+	// Open storage
+	store, err := storage.NewStore(storage.DefaultPath())
 	if err != nil {
 		return nil, err
 	}
 
 	server := &Server{
 		mcpServer: mcp.NewServer(impl, nil),
-		client:    client,
+		store:     store,
 	}
 
 	// Register components
@@ -43,6 +43,7 @@ func NewServer() (*Server, error) {
 
 // Run starts the MCP server with stdio transport.
 func (s *Server) Run(ctx context.Context) error {
+	defer func() { _ = s.store.Close() }()
 	transport := &mcp.StdioTransport{}
 	return s.mcpServer.Run(ctx, transport)
 }

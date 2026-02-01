@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/araddon/dateparse"
-	"github.com/harper/chronicle/internal/charm"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -24,14 +24,15 @@ var searchCmd = &cobra.Command{
 	Short: "Search entries",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get Charm client
-		client, err := charm.GetClient()
+		// Get storage
+		store, err := storage.NewStore(storage.DefaultPath())
 		if err != nil {
-			return fmt.Errorf("failed to connect to Charm: %w", err)
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
+		defer func() { _ = store.Close() }()
 
 		// Build search filter
-		filter := &charm.SearchFilter{
+		filter := &storage.SearchFilter{
 			Tags: searchTags,
 		}
 
@@ -57,7 +58,7 @@ var searchCmd = &cobra.Command{
 		}
 
 		// Search
-		entries, err := client.SearchEntries(filter, searchLimit)
+		entries, err := store.SearchEntries(filter, searchLimit)
 		if err != nil {
 			return fmt.Errorf("failed to search entries: %w", err)
 		}

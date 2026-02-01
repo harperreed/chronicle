@@ -1,5 +1,5 @@
-// ABOUTME: Sync subcommand for Charm cloud integration
-// ABOUTME: Provides status, link, unlink, and wipe commands (SSH key auth)
+// ABOUTME: Sync subcommand for local database management
+// ABOUTME: Provides status, repair (vacuum), reset, and wipe commands
 package cli
 
 import (
@@ -8,217 +8,100 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/charm/client"
-	"github.com/charmbracelet/charm/proto"
 	"github.com/fatih/color"
-	"github.com/harper/chronicle/internal/charm"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Manage cloud sync for chronicle data",
-	Long: `Sync your chronicle data securely to the cloud using Charm.
-
-Authentication is automatic via SSH keys - no login required!
+	Short: "Manage local chronicle database",
+	Long: `Manage your local chronicle database.
 
 Commands:
-  status  - Show sync status and Charm user ID
-  link    - Link this device to another Charm account
-  unlink  - Disconnect this device from Charm
-  repair  - Repair database corruption
-  reset   - Reset database to clean state
-  wipe    - Completely wipe all data including cloud backups
+  status  - Show database status and entry count
+  repair  - Optimize database (vacuum)
+  reset   - Clear all entries
+  wipe    - Delete database file completely
 
 Examples:
   chronicle sync status
-  chronicle sync link
-  chronicle sync repair --force`,
+  chronicle sync repair`,
 }
 
 var syncStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show sync status",
+	Short: "Show database status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get Charm client
-		c, err := charm.GetClient()
-		if err != nil {
-			fmt.Printf("Charm:     not connected (%v)\n", err)
-			fmt.Println("\nRun 'chronicle sync link' to connect to a Charm account.")
+		dbPath := storage.DefaultPath()
+		fmt.Printf("Database:  %s\n", dbPath)
+
+		// Check if database exists
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			fmt.Println("Status:    Not initialized")
+			fmt.Println("\nRun 'chronicle add' to create your first entry.")
 			return nil
 		}
 
-		// Get user ID
-		id, err := c.ID()
+		// Open store and get stats
+		store, err := storage.NewStore(dbPath)
 		if err != nil {
-			fmt.Printf("Charm:     error getting ID (%v)\n", err)
+			fmt.Printf("Status:    Error (%v)\n", err)
+			return nil
+		}
+		defer func() { _ = store.Close() }()
+
+		// Count entries
+		entries, err := store.ListEntries(0) // 0 = no limit
+		if err != nil {
+			fmt.Printf("Status:    Error reading entries (%v)\n", err)
 			return nil
 		}
 
-		fmt.Printf("Charm ID:  %s\n", id)
-		fmt.Printf("Server:    %s\n", charm.GetCharmHost())
-
-		if c.IsLinked() {
-			color.Green("Status:    Connected and syncing")
-		} else {
-			color.Yellow("Status:    Not linked")
-			fmt.Println("\nRun 'chronicle sync link' to link to a Charm account.")
-		}
+		color.Green("Status:    OK")
+		fmt.Printf("Entries:   %d\n", len(entries))
+		fmt.Printf("Modified:  %s\n", store.LastModified().Format("2006-01-02 15:04:05"))
 
 		return nil
 	},
 }
-
-var syncLinkCmd = &cobra.Command{
-	Use:   "link",
-	Short: "Link this device to a Charm account",
-	Long: `Link this device to an existing Charm account.
-
-This will generate a link code that you can enter on another device
-that's already linked to your Charm account.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cc, err := client.NewClientWithDefaults()
-		if err != nil {
-			return fmt.Errorf("failed to create Charm client: %w", err)
-		}
-
-		// Check if already linked
-		if _, err := cc.ID(); err == nil {
-			color.Green("Already linked to a Charm account!")
-			fmt.Println("Run 'chronicle sync status' to see your account info.")
-			return nil
-		}
-
-		fmt.Println("Generating link request...")
-		fmt.Println("Enter this code on a device that's already linked to your Charm account.")
-
-		lh := &linkHandler{}
-		if err := cc.LinkGen(lh); err != nil {
-			return fmt.Errorf("link failed: %w", err)
-		}
-
-		return nil
-	},
-}
-
-var syncUnlinkCmd = &cobra.Command{
-	Use:   "unlink",
-	Short: "Disconnect this device from Charm",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("This will disconnect this device from your Charm account.")
-		fmt.Println("Your local data will remain, but it won't sync anymore.")
-		fmt.Print("\nType 'unlink' to confirm: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		confirmation, _ := reader.ReadString('\n')
-		confirmation = strings.TrimSpace(confirmation)
-
-		if confirmation != "unlink" {
-			fmt.Println("Aborted.")
-			return nil
-		}
-
-		cc, err := client.NewClientWithDefaults()
-		if err != nil {
-			return fmt.Errorf("failed to create Charm client: %w", err)
-		}
-
-		// Get current auth keys and remove them
-		keys, err := cc.AuthorizedKeysWithMetadata()
-		if err != nil {
-			return fmt.Errorf("failed to get authorized keys: %w", err)
-		}
-
-		// Find and remove the current device's key
-		for _, key := range keys.Keys {
-			if key.Key != "" {
-				if err := cc.UnlinkAuthorizedKey(key.Key); err != nil {
-					fmt.Printf("Warning: failed to unlink key: %v\n", err)
-				}
-			}
-		}
-
-		color.Green("\nDevice unlinked successfully")
-		fmt.Println("Run 'chronicle sync link' to link to a different account.")
-
-		return nil
-	},
-}
-
-var (
-	repairForce bool
-)
 
 var syncRepairCmd = &cobra.Command{
 	Use:   "repair",
-	Short: "Repair database corruption",
-	Long: `Attempt to repair database corruption issues.
+	Short: "Optimize database",
+	Long: `Optimize the chronicle database.
 
-This runs SQLite integrity checks and repairs:
-- WAL checkpoint
-- Remove shared memory file
-- Integrity check
-- VACUUM
-
-Use --force to attempt recovery and cloud reset if corruption persists.`,
+This runs SQLite VACUUM to:
+- Reclaim unused space
+- Defragment the database
+- Rebuild indices`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Repairing chronicle database...")
+		fmt.Println("Optimizing chronicle database...")
 
-		// Call repair directly without opening the client
-		// This works even when the database is too corrupted to open normally
-		result, err := charm.RepairDB(repairForce)
+		store, err := storage.NewStore(storage.DefaultPath())
 		if err != nil {
-			return fmt.Errorf("repair failed: %w", err)
+			return fmt.Errorf("failed to open database: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		if err := store.Vacuum(); err != nil {
+			return fmt.Errorf("vacuum failed: %w", err)
 		}
 
-		// Display repair results with checkmarks
-		if result.WalCheckpointed {
-			color.Green("  ✓ WAL checkpointed")
-		}
-		if result.ShmRemoved {
-			color.Green("  ✓ SHM file removed")
-		}
-		if result.IntegrityOK {
-			color.Green("  ✓ Integrity check passed")
-		} else {
-			color.Red("  ✗ Integrity check failed")
-		}
-		if result.Vacuumed {
-			color.Green("  ✓ Database vacuumed")
-		}
-		if result.RecoveryAttempted {
-			color.Yellow("  ! Recovery attempted")
-		}
-		if result.ResetFromCloud {
-			color.Green("  ✓ Reset from cloud")
-		}
-
-		fmt.Println()
-		if result.IntegrityOK {
-			color.Green("Repair complete.")
-		} else if !repairForce {
-			color.Yellow("Repair incomplete. Run with --force to attempt recovery and cloud reset.")
-		} else {
-			color.Red("Repair failed. Database may be unrecoverable.")
-		}
-
+		color.Green("Database optimized successfully.")
 		return nil
 	},
 }
 
 var syncResetCmd = &cobra.Command{
 	Use:   "reset",
-	Short: "Reset database to clean state",
-	Long: `Reset the local database to a clean state.
+	Short: "Clear all entries",
+	Long: `Clear all entries from the database.
 
-This will:
-- Delete all local chronicle data
-- Re-sync from Charm Cloud
-
-Your cloud data will NOT be affected.
-This works even when the database is corrupted.`,
+This will delete all chronicle entries but keep the database file.
+This cannot be undone!`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("This will delete all local chronicle data and re-sync from cloud.")
+		fmt.Println("This will delete all chronicle entries.")
 		fmt.Print("Continue? [y/N]: ")
 
 		reader := bufio.NewReader(os.Stdin)
@@ -230,42 +113,36 @@ This works even when the database is corrupted.`,
 			return nil
 		}
 
-		fmt.Println("\nResetting database...")
-		// Call reset directly without opening the client
-		// This works even when the database is too corrupted to open normally
-		if err := charm.ResetDBFromCloud(); err != nil {
+		store, err := storage.NewStore(storage.DefaultPath())
+		if err != nil {
+			return fmt.Errorf("failed to open database: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		if err := store.Reset(); err != nil {
 			return fmt.Errorf("reset failed: %w", err)
 		}
 
-		color.Green("Reset complete!")
-		fmt.Println("Database has been reset and re-synced from cloud.")
-
+		color.Green("All entries deleted.")
 		return nil
 	},
 }
 
 var syncWipeCmd = &cobra.Command{
 	Use:   "wipe",
-	Short: "Completely wipe all data including cloud backups",
-	Long: `Completely wipe all chronicle data from everywhere.
+	Short: "Delete database file completely",
+	Long: `Completely delete the chronicle database file.
 
 This will:
-- Delete all local chronicle data
-- Delete all cloud backups
-- Remove data from all linked devices
+- Delete the database file
+- Delete any WAL/SHM files
 
 THIS CANNOT BE UNDONE!`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := charm.GetClient()
-		if err != nil {
-			return fmt.Errorf("not connected to Charm: %w", err)
-		}
+		dbPath := storage.DefaultPath()
 
-		fmt.Println("This will DELETE all chronicle data from EVERYWHERE.")
-		fmt.Println("This includes:")
-		fmt.Println("  - All local data")
-		fmt.Println("  - All cloud backups")
-		fmt.Println("  - Data on all linked devices")
+		fmt.Println("This will DELETE the chronicle database file completely.")
+		fmt.Printf("File: %s\n", dbPath)
 		fmt.Println("\nTHIS CANNOT BE UNDONE!")
 		fmt.Print("\nType 'wipe' to confirm: ")
 
@@ -278,82 +155,31 @@ THIS CANNOT BE UNDONE!`,
 			return nil
 		}
 
-		fmt.Println("\nWiping all chronicle data...")
-		result, err := c.Wipe()
-		if err != nil {
-			return fmt.Errorf("wipe failed: %w", err)
+		// Remove database and related files
+		files := []string{
+			dbPath,
+			dbPath + "-wal",
+			dbPath + "-shm",
 		}
 
-		fmt.Printf("Cloud backups deleted: %d\n", result.CloudBackupsDeleted)
-		fmt.Printf("Local files deleted:   %d\n", result.LocalFilesDeleted)
-		color.Green("Wipe complete!")
-		fmt.Println("All chronicle data has been permanently deleted.")
+		deleted := 0
+		for _, f := range files {
+			if err := os.Remove(f); err == nil {
+				deleted++
+			}
+		}
 
+		color.Green("Database wiped!")
+		fmt.Printf("Deleted %d file(s).\n", deleted)
 		return nil
 	},
 }
 
 func init() {
-	// Add --force flag to repair command
-	syncRepairCmd.Flags().BoolVarP(&repairForce, "force", "f", false, "Force repair even if database appears healthy")
-
 	syncCmd.AddCommand(syncStatusCmd)
-	syncCmd.AddCommand(syncLinkCmd)
-	syncCmd.AddCommand(syncUnlinkCmd)
 	syncCmd.AddCommand(syncRepairCmd)
 	syncCmd.AddCommand(syncResetCmd)
 	syncCmd.AddCommand(syncWipeCmd)
 
 	rootCmd.AddCommand(syncCmd)
-}
-
-// linkHandler implements proto.LinkHandler for the link flow.
-type linkHandler struct{}
-
-func (lh *linkHandler) TokenCreated(l *proto.Link) {
-	fmt.Printf("\nLink code: %s\n\n", l.Token)
-	fmt.Println("Waiting for approval...")
-}
-
-func (lh *linkHandler) TokenSent(l *proto.Link) {
-	// Token has been validated
-}
-
-func (lh *linkHandler) ValidToken(l *proto.Link) {
-	// Linking complete
-}
-
-func (lh *linkHandler) InvalidToken(l *proto.Link) {
-	fmt.Println("Invalid or expired token. Please try again.")
-}
-
-func (lh *linkHandler) Request(l *proto.Link) bool {
-	fmt.Printf("\nLink request from: %s\n", l.RequestAddr)
-	fmt.Print("Approve? [y/N]: ")
-
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-
-	return response == "y" || response == "yes"
-}
-
-func (lh *linkHandler) RequestDenied(l *proto.Link) {
-	fmt.Println("Link request denied.")
-}
-
-func (lh *linkHandler) SameUser(l *proto.Link) {
-	color.Green("\nSuccessfully linked!")
-}
-
-func (lh *linkHandler) Success(l *proto.Link) {
-	color.Green("\nSuccessfully linked!")
-}
-
-func (lh *linkHandler) Timeout(l *proto.Link) {
-	fmt.Println("\nLink request timed out. Please try again.")
-}
-
-func (lh *linkHandler) Error(l *proto.Link) {
-	fmt.Println("\nError during linking")
 }

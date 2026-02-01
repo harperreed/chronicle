@@ -1,5 +1,5 @@
 // ABOUTME: Add command for creating new log entries
-// ABOUTME: Handles message input and tag flags with automatic Charm sync
+// ABOUTME: Handles message input and tag flags with SQLite storage
 package cli
 
 import (
@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/harper/chronicle/internal/charm"
 	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/logging"
+	"github.com/harper/chronicle/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -35,11 +35,12 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("message cannot be empty")
 		}
 
-		// Get Charm client
-		client, err := charm.GetClient()
+		// Get storage
+		store, err := storage.NewStore(storage.DefaultPath())
 		if err != nil {
-			return fmt.Errorf("failed to connect to Charm: %w", err)
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
+		defer func() { _ = store.Close() }()
 
 		// Get metadata
 		hostname, err := os.Hostname()
@@ -57,7 +58,7 @@ var addCmd = &cobra.Command{
 
 		// Create entry (set timestamp now for project logging)
 		now := time.Now()
-		entry := charm.Entry{
+		entry := storage.Entry{
 			Timestamp:        now,
 			Message:          message,
 			Hostname:         hostname,
@@ -66,7 +67,7 @@ var addCmd = &cobra.Command{
 			Tags:             tags,
 		}
 
-		id, err := client.CreateEntry(entry)
+		id, err := store.CreateEntry(entry)
 		if err != nil {
 			return fmt.Errorf("failed to create entry: %w", err)
 		}
@@ -80,7 +81,7 @@ var addCmd = &cobra.Command{
 			projectCfg, err := config.LoadProjectConfig(chroniclePath)
 			if err == nil && projectCfg.LocalLogging {
 				logDir := filepath.Join(projectRoot, projectCfg.LogDir)
-				// Convert charm.Entry to logging.Entry for project logging
+				// Convert storage.Entry to logging.Entry for project logging
 				logEntry := logging.Entry{
 					ID:               id,
 					Timestamp:        now,
