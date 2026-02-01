@@ -25,3 +25,8 @@ go.work
 
 # OS
 .DS_Store
+
+# Coverage files
+coverage.html
+coverage.out
+*_cover.out
