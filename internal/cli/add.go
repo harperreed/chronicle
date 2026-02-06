@@ -1,5 +1,5 @@
 // ABOUTME: Add command for creating new log entries
-// ABOUTME: Handles message input and tag flags with SQLite storage
+// ABOUTME: Handles message input and tag flags with config-based storage
 package cli
 
 import (
@@ -35,8 +35,12 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("message cannot be empty")
 		}
 
-		// Get storage
-		store, err := storage.NewStore(storage.DefaultPath())
+		// Get storage via config
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		store, err := cfg.OpenStorage()
 		if err != nil {
 			return fmt.Errorf("failed to open storage: %w", err)
 		}

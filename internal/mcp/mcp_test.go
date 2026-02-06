@@ -14,10 +14,10 @@ import (
 )
 
 // testServer creates an MCP server with an in-memory store for testing
-func newTestServer(t *testing.T) (*Server, *storage.Store) {
+func newTestServer(t *testing.T) (*Server, storage.Storage) {
 	t.Helper()
 
-	store, err := storage.NewStore(":memory:")
+	store, err := storage.NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}

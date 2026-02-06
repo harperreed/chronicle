@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/araddon/dateparse"
+	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/storage"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +25,12 @@ var searchCmd = &cobra.Command{
 	Short: "Search entries",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get storage
-		store, err := storage.NewStore(storage.DefaultPath())
+		// Get storage via config
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		store, err := cfg.OpenStorage()
 		if err != nil {
 			return fmt.Errorf("failed to open storage: %w", err)
 		}

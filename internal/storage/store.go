@@ -1,5 +1,5 @@
-// ABOUTME: SQLite storage layer for chronicle entries
-// ABOUTME: Pure Go implementation using modernc.org/sqlite with FTS5 full-text search
+// ABOUTME: SQLite storage backend for chronicle entries
+// ABOUTME: Implements Storage interface using modernc.org/sqlite with FTS5 full-text search
 
 package storage
 
@@ -14,15 +14,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harper/chronicle/internal/config"
 	_ "modernc.org/sqlite"
 )
 
-// Store provides SQLite storage for chronicle entries.
-type Store struct {
+// SqliteStore provides SQLite storage for chronicle entries.
+type SqliteStore struct {
 	db           *sql.DB
 	lastModified time.Time
 }
+
+// Compile-time check that SqliteStore implements Storage.
+var _ Storage = (*SqliteStore)(nil)
 
 // Entry represents a chronicle log entry.
 type Entry struct {
@@ -45,12 +47,17 @@ type SearchFilter struct {
 
 // DefaultPath returns the default database path: ~/.local/share/chronicle/chronicle.db.
 func DefaultPath() string {
-	return filepath.Join(config.GetDataHome(), "chronicle", "chronicle.db")
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		home := os.Getenv("HOME")
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(dataHome, "chronicle", "chronicle.db")
 }
 
-// NewStore creates a new store with the given database path.
+// NewSqliteStore creates a new SQLite store with the given database path.
 // Use ":memory:" for an in-memory database.
-func NewStore(dbPath string) (*Store, error) {
+func NewSqliteStore(dbPath string) (*SqliteStore, error) {
 	// Create directory if needed (unless in-memory)
 	if dbPath != ":memory:" {
 		dir := filepath.Dir(dbPath)
@@ -77,7 +84,7 @@ func NewStore(dbPath string) (*Store, error) {
 		}
 	}
 
-	store := &Store{
+	store := &SqliteStore{
 		db:           db,
 		lastModified: time.Now(),
 	}
@@ -91,7 +98,7 @@ func NewStore(dbPath string) (*Store, error) {
 }
 
 // migrate runs database migrations.
-func (s *Store) migrate() error {
+func (s *SqliteStore) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS entries (
 		rowid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,12 +142,12 @@ func (s *Store) migrate() error {
 }
 
 // Close closes the database connection.
-func (s *Store) Close() error {
+func (s *SqliteStore) Close() error {
 	return s.db.Close()
 }
 
 // CreateEntry creates a new entry and returns its ID.
-func (s *Store) CreateEntry(entry Entry) (string, error) {
+func (s *SqliteStore) CreateEntry(entry Entry) (string, error) {
 	if entry.ID == "" {
 		entry.ID = uuid.New().String()
 	}
@@ -168,7 +175,7 @@ func (s *Store) CreateEntry(entry Entry) (string, error) {
 }
 
 // GetEntry retrieves an entry by ID.
-func (s *Store) GetEntry(id string) (*Entry, error) {
+func (s *SqliteStore) GetEntry(id string) (*Entry, error) {
 	var entry Entry
 	var tagsJSON string
 	var timestamp string
@@ -202,7 +209,7 @@ func (s *Store) GetEntry(id string) (*Entry, error) {
 }
 
 // UpdateEntry updates an existing entry.
-func (s *Store) UpdateEntry(entry Entry) error {
+func (s *SqliteStore) UpdateEntry(entry Entry) error {
 	if entry.ID == "" {
 		return fmt.Errorf("entry ID required")
 	}
@@ -235,7 +242,7 @@ func (s *Store) UpdateEntry(entry Entry) error {
 }
 
 // DeleteEntry removes an entry by ID.
-func (s *Store) DeleteEntry(id string) error {
+func (s *SqliteStore) DeleteEntry(id string) error {
 	result, err := s.db.Exec("DELETE FROM entries WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete entry: %w", err)
@@ -254,14 +261,14 @@ func (s *Store) DeleteEntry(id string) error {
 }
 
 // ListEntries returns entries ordered by timestamp descending.
-func (s *Store) ListEntries(limit int) ([]Entry, error) {
+func (s *SqliteStore) ListEntries(limit int) ([]Entry, error) {
 	return s.SearchEntries(nil, limit)
 }
 
 // SearchEntries returns entries matching the filter.
 //
 //nolint:gocognit,gocyclo,nestif // Complex but straightforward query building logic
-func (s *Store) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) {
+func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) {
 	var entries []Entry
 	var args []interface{}
 
@@ -373,18 +380,18 @@ func (s *Store) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) 
 }
 
 // LastModified returns when the database was last modified.
-func (s *Store) LastModified() time.Time {
+func (s *SqliteStore) LastModified() time.Time {
 	return s.lastModified
 }
 
 // Vacuum runs SQLite VACUUM to optimize the database.
-func (s *Store) Vacuum() error {
+func (s *SqliteStore) Vacuum() error {
 	_, err := s.db.Exec("VACUUM")
 	return err
 }
 
 // Reset clears all data from the database.
-func (s *Store) Reset() error {
+func (s *SqliteStore) Reset() error {
 	_, err := s.db.Exec("DELETE FROM entries")
 	if err != nil {
 		return fmt.Errorf("delete entries: %w", err)

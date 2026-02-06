@@ -114,7 +114,7 @@ func TestAddCommandWithRealStorage(t *testing.T) {
 
 		// Verify entry was created by opening the database
 		dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-		store, err := storage.NewStore(dbPath)
+		store, err := storage.NewSqliteStore(dbPath)
 		if err != nil {
 			t.Fatalf("failed to open store: %v", err)
 		}
@@ -137,7 +137,7 @@ func TestListCommandWithRealStorage(t *testing.T) {
 
 	// First add an entry
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestSearchCommandWithRealStorage(t *testing.T) {
 
 	// First add some entries
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestExportCommandWithRealStorage(t *testing.T) {
 
 	// First add an entry
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestSyncStatusCommand(t *testing.T) {
 	t.Run("shows status for existing database", func(t *testing.T) {
 		// Create database
 		dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-		store, err := storage.NewStore(dbPath)
+		store, err := storage.NewSqliteStore(dbPath)
 		if err != nil {
 			t.Fatalf("failed to create store: %v", err)
 		}
@@ -474,7 +474,7 @@ func TestSyncRepairCommand(t *testing.T) {
 
 	// Create database
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestSearchWithSinceDate(t *testing.T) {
 
 	// Create database with entries
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestListWithLimit(t *testing.T) {
 
 	// Create database with entries
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -637,7 +637,7 @@ func TestSearchWithLimit(t *testing.T) {
 
 	// Create database with entries
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -680,7 +680,7 @@ func TestExportWithMdFormat(t *testing.T) {
 
 	// Create database with entries
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}

@@ -19,7 +19,7 @@ func TestWALConcurrentConnections(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "chronicle.db")
 
 	// First, initialize the database
-	initStore, err := NewStore(dbPath)
+	initStore, err := NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create initial store: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestWALConcurrentConnections(t *testing.T) {
 			defer wg.Done()
 
 			// Each goroutine opens its own store (simulates separate processes)
-			store, err := NewStore(dbPath)
+			store, err := NewSqliteStore(dbPath)
 			if err != nil {
 				errors <- err
 				return
@@ -72,7 +72,7 @@ func TestWALConcurrentConnections(t *testing.T) {
 	}
 
 	// Verify total entries
-	store, err := NewStore(dbPath)
+	store, err := NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open store for verification: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestWALConcurrentConnections(t *testing.T) {
 }
 
 func TestFTSSearchIntegration(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestFTSSearchIntegration(t *testing.T) {
 }
 
 func TestResetAndVacuum(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}

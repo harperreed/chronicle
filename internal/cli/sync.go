@@ -1,15 +1,16 @@
-// ABOUTME: Sync subcommand for local database management
-// ABOUTME: Provides status, repair (vacuum), reset, and wipe commands
+// ABOUTME: Sync subcommand for local storage management
+// ABOUTME: Provides status, repair (vacuum), reset, and wipe commands for any backend
 package cli
 
 import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/harper/chronicle/internal/storage"
+	"github.com/harper/chronicle/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -33,18 +34,16 @@ var syncStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show database status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := storage.DefaultPath()
-		fmt.Printf("Database:  %s\n", dbPath)
-
-		// Check if database exists
-		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-			fmt.Println("Status:    Not initialized")
-			fmt.Println("\nRun 'chronicle add' to create your first entry.")
-			return nil
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
 		}
 
+		fmt.Printf("Backend:   %s\n", cfg.GetBackend())
+		fmt.Printf("Data dir:  %s\n", cfg.GetDataDir())
+
 		// Open store and get stats
-		store, err := storage.NewStore(dbPath)
+		store, err := cfg.OpenStorage()
 		if err != nil {
 			fmt.Printf("Status:    Error (%v)\n", err)
 			return nil
@@ -76,11 +75,16 @@ This runs SQLite VACUUM to:
 - Defragment the database
 - Rebuild indices`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Optimizing chronicle database...")
+		fmt.Println("Optimizing chronicle storage...")
 
-		store, err := storage.NewStore(storage.DefaultPath())
+		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		store, err := cfg.OpenStorage()
+		if err != nil {
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
 		defer func() { _ = store.Close() }()
 
@@ -88,7 +92,7 @@ This runs SQLite VACUUM to:
 			return fmt.Errorf("vacuum failed: %w", err)
 		}
 
-		color.Green("Database optimized successfully.")
+		color.Green("Storage optimized successfully.")
 		return nil
 	},
 }
@@ -113,9 +117,14 @@ This cannot be undone!`,
 			return nil
 		}
 
-		store, err := storage.NewStore(storage.DefaultPath())
+		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		store, err := cfg.OpenStorage()
+		if err != nil {
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
 		defer func() { _ = store.Close() }()
 
@@ -139,10 +148,17 @@ This will:
 
 THIS CANNOT BE UNDONE!`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := storage.DefaultPath()
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
 
-		fmt.Println("This will DELETE the chronicle database file completely.")
-		fmt.Printf("File: %s\n", dbPath)
+		dataDir := cfg.GetDataDir()
+		backend := cfg.GetBackend()
+
+		fmt.Println("This will DELETE all chronicle data completely.")
+		fmt.Printf("Backend:  %s\n", backend)
+		fmt.Printf("Data dir: %s\n", dataDir)
 		fmt.Println("\nTHIS CANNOT BE UNDONE!")
 		fmt.Print("\nType 'wipe' to confirm: ")
 
@@ -155,22 +171,35 @@ THIS CANNOT BE UNDONE!`,
 			return nil
 		}
 
-		// Remove database and related files
-		files := []string{
-			dbPath,
-			dbPath + "-wal",
-			dbPath + "-shm",
-		}
-
 		deleted := 0
-		for _, f := range files {
-			if err := os.Remove(f); err == nil {
-				deleted++
+		if backend == "sqlite" {
+			// Remove database and related files
+			dbPath := config.DefaultDBPath(dataDir)
+			files := []string{
+				dbPath,
+				dbPath + "-wal",
+				dbPath + "-shm",
+			}
+			for _, f := range files {
+				if err := os.Remove(f); err == nil {
+					deleted++
+				}
+			}
+		} else {
+			// Remove all data directory contents for markdown backend
+			entries, readErr := os.ReadDir(dataDir)
+			if readErr == nil {
+				for _, entry := range entries {
+					path := filepath.Join(dataDir, entry.Name())
+					if err := os.RemoveAll(path); err == nil {
+						deleted++
+					}
+				}
 			}
 		}
 
-		color.Green("Database wiped!")
-		fmt.Printf("Deleted %d file(s).\n", deleted)
+		color.Green("Data wiped!")
+		fmt.Printf("Deleted %d item(s).\n", deleted)
 		return nil
 	},
 }

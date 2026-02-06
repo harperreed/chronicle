@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-func TestNewStore(t *testing.T) {
+func TestNewSqliteStore(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	store, err := NewStore(dbPath)
+	store, err := NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestNewStore(t *testing.T) {
 }
 
 func TestNewStoreInMemory(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create in-memory store: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestNewStoreInMemory(t *testing.T) {
 }
 
 func TestCreateEntry(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestCreateEntry(t *testing.T) {
 }
 
 func TestGetEntry(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestGetEntry(t *testing.T) {
 }
 
 func TestGetEntryNotFound(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestGetEntryNotFound(t *testing.T) {
 }
 
 func TestUpdateEntry(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestUpdateEntry(t *testing.T) {
 }
 
 func TestDeleteEntry(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestDeleteEntry(t *testing.T) {
 }
 
 func TestListEntries(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestListEntries(t *testing.T) {
 }
 
 func TestSearchEntriesByText(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestSearchEntriesByText(t *testing.T) {
 }
 
 func TestSearchEntriesByTags(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestSearchEntriesByTags(t *testing.T) {
 }
 
 func TestSearchEntriesByDateRange(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestSearchEntriesByDateRange(t *testing.T) {
 }
 
 func TestLastModified(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestLastModified(t *testing.T) {
 }
 
 func TestVacuum(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestDefaultPath(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestReset(t *testing.T) {
 }
 
 func TestUpdateEntryNotFound(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -431,7 +431,7 @@ func TestUpdateEntryNotFound(t *testing.T) {
 }
 
 func TestUpdateEntryNoID(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestUpdateEntryNoID(t *testing.T) {
 }
 
 func TestDeleteEntryNotFound(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -462,7 +462,7 @@ func TestDeleteEntryNotFound(t *testing.T) {
 }
 
 func TestCreateEntryWithExistingID(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestCreateEntryWithExistingID(t *testing.T) {
 }
 
 func TestCreateEntryWithoutTimestamp(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -512,7 +512,7 @@ func TestCreateEntryWithoutTimestamp(t *testing.T) {
 }
 
 func TestSearchEntriesWithUntilFilter(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -544,7 +544,7 @@ func TestSearchEntriesWithUntilFilter(t *testing.T) {
 }
 
 func TestSearchEntriesCombinedFilters(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -580,7 +580,7 @@ func TestSearchEntriesCombinedFilters(t *testing.T) {
 }
 
 func TestSearchEntriesTextAndTags(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestSearchEntriesTextAndTags(t *testing.T) {
 }
 
 func TestSearchEntriesMultipleTags(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -646,7 +646,7 @@ func TestSearchEntriesMultipleTags(t *testing.T) {
 }
 
 func TestSearchEntriesNoLimit(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -699,7 +699,7 @@ func TestParseTimestamp(t *testing.T) {
 }
 
 func TestCreateEntryWithNullTags(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -728,7 +728,7 @@ func TestCreateEntryWithNullTags(t *testing.T) {
 }
 
 func TestListEntriesEmpty(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -746,7 +746,7 @@ func TestListEntriesEmpty(t *testing.T) {
 }
 
 func TestSearchEntriesEmptyText(t *testing.T) {
-	store, err := NewStore(":memory:")
+	store, err := NewSqliteStore(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
