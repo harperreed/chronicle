@@ -45,7 +45,7 @@ func TestIsKnownCommand(t *testing.T) {
 		{"list command", "list", true},
 		{"search command", "search", true},
 		{"export command", "export", true},
-		{"sync command", "sync", true},
+		{"setup command", "setup", true},
 		{"mcp command", "mcp", true},
 		{"install-skill command", "install-skill", true},
 		{"unknown command", "unknown", false},
@@ -429,71 +429,6 @@ func TestExportCommandWithRealStorage(t *testing.T) {
 	})
 }
 
-func TestSyncStatusCommand(t *testing.T) {
-	tmpDir, cleanup := testSetup(t)
-	defer cleanup()
-
-	t.Run("shows status for non-existent database", func(t *testing.T) {
-		var stdout bytes.Buffer
-		rootCmd.SetOut(&stdout)
-		rootCmd.SetErr(&stdout)
-
-		rootCmd.SetArgs([]string{"sync", "status"})
-		err := rootCmd.Execute()
-
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-	})
-
-	t.Run("shows status for existing database", func(t *testing.T) {
-		// Create database
-		dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-		store, err := storage.NewSqliteStore(dbPath)
-		if err != nil {
-			t.Fatalf("failed to create store: %v", err)
-		}
-		store.Close()
-
-		var stdout bytes.Buffer
-		rootCmd.SetOut(&stdout)
-		rootCmd.SetErr(&stdout)
-
-		rootCmd.SetArgs([]string{"sync", "status"})
-		err = rootCmd.Execute()
-
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-	})
-}
-
-func TestSyncRepairCommand(t *testing.T) {
-	tmpDir, cleanup := testSetup(t)
-	defer cleanup()
-
-	// Create database
-	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
-	store, err := storage.NewSqliteStore(dbPath)
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-	store.Close()
-
-	t.Run("repairs database", func(t *testing.T) {
-		var stdout bytes.Buffer
-		rootCmd.SetOut(&stdout)
-		rootCmd.SetErr(&stdout)
-
-		rootCmd.SetArgs([]string{"sync", "repair"})
-		err := rootCmd.Execute()
-
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-	})
-}
-
 func TestCommandAliases(t *testing.T) {
 	t.Run("add command has 'a' alias", func(t *testing.T) {
 		found := false
@@ -729,28 +664,10 @@ func TestExportWithMdFormat(t *testing.T) {
 	})
 }
 
-func TestSyncSubcommandMetadata(t *testing.T) {
-	t.Run("status command has correct metadata", func(t *testing.T) {
-		if syncStatusCmd.Use != "status" {
-			t.Errorf("expected Use to be 'status', got: %s", syncStatusCmd.Use)
-		}
-	})
-
-	t.Run("repair command has correct metadata", func(t *testing.T) {
-		if syncRepairCmd.Use != "repair" {
-			t.Errorf("expected Use to be 'repair', got: %s", syncRepairCmd.Use)
-		}
-	})
-
-	t.Run("reset command has correct metadata", func(t *testing.T) {
-		if syncResetCmd.Use != "reset" {
-			t.Errorf("expected Use to be 'reset', got: %s", syncResetCmd.Use)
-		}
-	})
-
-	t.Run("wipe command has correct metadata", func(t *testing.T) {
-		if syncWipeCmd.Use != "wipe" {
-			t.Errorf("expected Use to be 'wipe', got: %s", syncWipeCmd.Use)
+func TestSetupCommandMetadata(t *testing.T) {
+	t.Run("setup command has correct metadata", func(t *testing.T) {
+		if setupCmd.Use != "setup" {
+			t.Errorf("expected Use to be 'setup', got: %s", setupCmd.Use)
 		}
 	})
 }
@@ -834,33 +751,9 @@ func TestExportCommandStructure(t *testing.T) {
 	})
 }
 
-func TestSyncStatusRunE(t *testing.T) {
-	t.Run("status command has RunE set", func(t *testing.T) {
-		if syncStatusCmd.RunE == nil {
-			t.Error("expected RunE to be set")
-		}
-	})
-}
-
-func TestSyncRepairRunE(t *testing.T) {
-	t.Run("repair command has RunE set", func(t *testing.T) {
-		if syncRepairCmd.RunE == nil {
-			t.Error("expected RunE to be set")
-		}
-	})
-}
-
-func TestSyncResetRunE(t *testing.T) {
-	t.Run("reset command has RunE set", func(t *testing.T) {
-		if syncResetCmd.RunE == nil {
-			t.Error("expected RunE to be set")
-		}
-	})
-}
-
-func TestSyncWipeRunE(t *testing.T) {
-	t.Run("wipe command has RunE set", func(t *testing.T) {
-		if syncWipeCmd.RunE == nil {
+func TestSetupRunE(t *testing.T) {
+	t.Run("setup command has RunE set", func(t *testing.T) {
+		if setupCmd.RunE == nil {
 			t.Error("expected RunE to be set")
 		}
 	})
