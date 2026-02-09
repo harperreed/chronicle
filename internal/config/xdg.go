@@ -12,7 +12,7 @@ func GetDataHome() string {
 	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
 		return xdg
 	}
-	home := os.Getenv("HOME")
+	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share")
 }
 
@@ -21,6 +21,6 @@ func GetConfigHome() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return xdg
 	}
-	home := os.Getenv("HOME")
+	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config")
 }

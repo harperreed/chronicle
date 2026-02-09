@@ -12,24 +12,39 @@ import (
 	"github.com/harper/chronicle/internal/storage"
 )
 
-// testSetup creates a temporary directory and sets up environment for testing
+// testSetup creates a temporary directory and sets up environment for testing.
+// It configures both XDG_DATA_HOME and XDG_CONFIG_HOME, and writes a config
+// file that explicitly selects the sqlite backend for integration tests.
 func testSetup(t *testing.T) (string, func()) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
 
-	// Create directory
+	// Create data directory
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		t.Fatalf("failed to create temp directory: %v", err)
 	}
 
-	// Set XDG_DATA_HOME to redirect storage
+	// Create config directory and write config file to force sqlite backend
+	configDir := filepath.Join(tmpDir, "chronicle")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config directory: %v", err)
+	}
+	configPath := filepath.Join(configDir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"backend":"sqlite"}`), 0600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	// Set XDG_DATA_HOME and XDG_CONFIG_HOME to redirect storage and config
 	oldDataHome := os.Getenv("XDG_DATA_HOME")
+	oldConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	cleanup := func() {
 		os.Setenv("XDG_DATA_HOME", oldDataHome)
+		os.Setenv("XDG_CONFIG_HOME", oldConfigHome)
 	}
 
 	return tmpDir, cleanup

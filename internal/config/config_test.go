@@ -50,6 +50,7 @@ func TestGetConfigPathWithoutXDGConfigHome(t *testing.T) {
 func TestLoadNonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	cfg, err := Load()
 	if err != nil {
@@ -57,6 +58,65 @@ func TestLoadNonExistent(t *testing.T) {
 	}
 	if cfg == nil {
 		t.Fatal("Load returned nil config")
+	}
+	if cfg.Backend != "markdown" {
+		t.Errorf("expected markdown backend for new user, got %q", cfg.Backend)
+	}
+
+	// Verify config file was auto-created
+	configPath := GetConfigPath()
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Error("expected config file to be auto-created")
+	}
+}
+
+func TestLoadNonExistent_ExistingSQLiteUser(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	// Create a fake .db file to simulate existing SQLite user
+	dbDir := filepath.Join(tmpDir, "chronicle")
+	if err := os.MkdirAll(dbDir, 0750); err != nil {
+		t.Fatalf("failed to create db dir: %v", err)
+	}
+	dbPath := filepath.Join(dbDir, "chronicle.db")
+	if err := os.WriteFile(dbPath, []byte("fake-db"), 0600); err != nil {
+		t.Fatalf("failed to create fake db: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load should not fail: %v", err)
+	}
+	if cfg.Backend != "sqlite" {
+		t.Errorf("expected sqlite backend for existing user, got %q", cfg.Backend)
+	}
+}
+
+func TestLoadAutoCreatesValidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	_, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Read back the auto-created file and verify it's valid JSON
+	configPath := GetConfigPath()
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read auto-created config: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("auto-created config is not valid JSON: %v", err)
+	}
+	if raw["backend"] != "markdown" {
+		t.Errorf("expected backend 'markdown' in config file, got %v", raw["backend"])
 	}
 }
 

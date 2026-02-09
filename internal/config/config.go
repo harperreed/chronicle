@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/harper/chronicle/internal/storage"
+	"github.com/harper/suite/mdstore"
 )
 
 // Config stores chronicle configuration.
@@ -57,6 +58,24 @@ func (c *Config) OpenStorage() (storage.Storage, error) {
 	}
 }
 
+// defaultDBFilename is the SQLite database filename used for existing-user detection.
+const defaultDBFilename = "chronicle.db"
+
+// defaultFirstRunConfig returns the appropriate default config for first-time runs.
+// If an existing SQLite database is found, it preserves SQLite as the backend.
+// Otherwise, it defaults to markdown for new users.
+func defaultFirstRunConfig() *Config {
+	dbPath := filepath.Join(GetDataHome(), "chronicle", defaultDBFilename)
+	_, err := os.Stat(dbPath)
+	switch {
+	case err == nil:
+		return &Config{Backend: "sqlite"}
+	case !os.IsNotExist(err):
+		fmt.Fprintf(os.Stderr, "warning: could not check for existing database: %v\n", err)
+	}
+	return &Config{Backend: "markdown"}
+}
+
 // ExpandPath expands a leading ~ to the user's home directory.
 func ExpandPath(path string) string {
 	if path == "" {
@@ -85,7 +104,11 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{}, nil
+			cfg := defaultFirstRunConfig()
+			if saveErr := cfg.Save(); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not save default config: %v\n", saveErr)
+			}
+			return cfg, nil
 		}
 		return nil, err
 	}
@@ -100,16 +123,11 @@ func Load() (*Config, error) {
 // Save writes config to disk.
 func (c *Config) Save() error {
 	path := GetConfigPath()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return err
-	}
-
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return mdstore.AtomicWrite(path, data)
 }
 
 // DefaultDBPath returns the default database path within the given data directory.
