@@ -4,33 +4,30 @@ A fast, lightweight CLI tool for logging timestamped messages with metadata.
 
 ## Features
 
-- **Global SQLite database** - All entries stored in `~/.local/share/chronicle/chronicle.db`
+- **Dual storage backends** - SQLite with FTS5 search, or markdown files with YAML frontmatter
 - **Rich metadata** - Automatic capture of timestamp, hostname, username, working directory
 - **Tagging** - Organize entries with multiple tags
-- **Full-text search** - Fast FTS5-powered search
+- **Full-text search** - Fast FTS5-powered search (SQLite backend)
 - **Project logs** - Optional per-project log files (markdown or JSON)
 - **Natural date parsing** - Use "yesterday", "last week", or ISO dates
 - **Multiple output formats** - Human-readable tables or JSON
+- **Data migration** - Convert between backends with `chronicle migrate`
 
 ## Installation
 
 ### From Source
 
-**Important:** Chronicle requires the `sqlite_fts5` build tag for full-text search support.
-
 ```bash
 git clone https://github.com/harper/chronicle
 cd chronicle
-go build -tags=sqlite_fts5 -o chronicle .
+go build -o chronicle .
 ```
 
 ### Install with go install
 
 ```bash
-go install -tags=sqlite_fts5 github.com/harper/chronicle@latest
+go install github.com/harper/chronicle@latest
 ```
-
-> **Note:** The `-tags=sqlite_fts5` flag is required to enable SQLite FTS5 (Full-Text Search) support. Without this flag, the application will not compile or run correctly.
 
 ## Quick Start
 
@@ -79,6 +76,28 @@ chronicle search "bug" --tag golang --json        # Combined with JSON
 **Date formats:**
 - Natural: `yesterday`, `today`, `"3 days ago"`, `"last week"`
 - ISO: `2025-11-29`, `2025-11-29T14:30:00`
+
+### Export
+
+```bash
+chronicle export                          # YAML (default)
+chronicle export --format markdown        # Markdown
+chronicle export --format json            # JSON
+```
+
+### Setup & Migration
+
+```bash
+chronicle setup                           # Interactive backend configuration
+chronicle migrate --to markdown           # Migrate data to markdown backend
+chronicle migrate --to sqlite             # Migrate data to SQLite backend
+```
+
+### Install Claude Code Skill
+
+```bash
+chronicle install-skill                   # Install chronicle skill for Claude Code
+```
 
 ## MCP Server
 
@@ -155,17 +174,29 @@ Example markdown log entry:
 
 ### Global Config
 
-Optional: `~/.config/chronicle/config.toml`
+Optional: `~/.config/chronicle/config.json`
 
-```toml
-# Override database location
-db_path = "/custom/path/chronicle.db"
+```json
+{
+  "backend": "markdown",
+  "data_dir": "~/.local/share/chronicle"
+}
 ```
 
-## Database Schema
+- `backend` - Storage backend: `"sqlite"` or `"markdown"` (new installs default to markdown)
+- `data_dir` - Root directory for data storage (defaults to `~/.local/share/chronicle`)
 
-- **entries** - Main log entries with timestamp, message, metadata
-- **tags** - Many-to-many tag relationships
+Run `chronicle setup` to configure interactively.
+
+### Storage Backends
+
+**SQLite** stores all entries in `<data_dir>/chronicle.db` with FTS5 full-text search.
+
+**Markdown** stores each entry as a separate markdown file with YAML frontmatter, organized by date: `<data_dir>/YYYY/MM/DD/<slug>-<id>.md`.
+
+## Database Schema (SQLite backend)
+
+- **entries** - Main log entries with timestamp, message, metadata, and tags (JSON array)
 - **entries_fts** - Full-text search virtual table (FTS5)
 
 Query directly with sqlite3:
@@ -179,11 +210,11 @@ sqlite3 ~/.local/share/chronicle/chronicle.db "SELECT * FROM entries"
 # Run tests
 go test ./... -v
 
-# Build (remember the build tag!)
-go build -tags=sqlite_fts5 -o chronicle .
+# Build
+go build -o chronicle .
 
 # Install locally
-go install -tags=sqlite_fts5
+go install
 ```
 
 ## License

@@ -2,7 +2,7 @@
 set -e
 
 echo "Building chronicle with MCP support..."
-go build -tags sqlite_fts5 -o chronicle .
+go build -o chronicle .
 
 echo "Testing MCP server can start..."
 # MCP server runs on stdio and will block waiting for input.

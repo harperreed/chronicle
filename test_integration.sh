@@ -13,7 +13,7 @@ echo "Running chronicle integration tests..."
 
 # Build
 echo "Building chronicle..."
-go build -tags=sqlite_fts5 -o chronicle .
+go build -o chronicle .
 
 # Save the path to chronicle binary before changing directories
 CHRONICLE_BIN="$(pwd)/chronicle"

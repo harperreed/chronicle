@@ -73,4 +73,6 @@ chronicle export --format markdown      # Export
 
 ## Data location
 
-`~/.local/share/chronicle/chronicle.db` (SQLite with FTS5, respects XDG_DATA_HOME)
+`~/.local/share/chronicle/` (respects XDG_DATA_HOME). Backend-dependent:
+- **SQLite**: `chronicle.db` in data directory
+- **Markdown**: date-organized files in `YYYY/MM/DD/` subdirectories

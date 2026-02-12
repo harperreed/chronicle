@@ -17,28 +17,28 @@ help:
 	@echo "  make dev-db     - Show development database location"
 	@echo "  make release    - Create a release build"
 
-# Build the binary with sqlite_fts5 support
+# Build the binary
 build:
 	@echo "Building chronicle..."
-	go build -tags sqlite_fts5 -o chronicle .
+	go build -o chronicle .
 	@echo "✓ Built successfully: ./chronicle"
 
 # Run all tests
 test:
 	@echo "Running tests..."
-	go test -tags sqlite_fts5 -v ./...
+	go test -v ./...
 
 # Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	go test -tags sqlite_fts5 -coverprofile=coverage.out -covermode=atomic ./...
+	go test -coverprofile=coverage.out -covermode=atomic ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report: coverage.html"
 
 # Install to GOPATH/bin
 install:
 	@echo "Installing chronicle..."
-	go install -tags sqlite_fts5 .
+	go install .
 	@echo "✓ Installed to $(shell go env GOPATH)/bin/chronicle"
 
 # Clean built binaries
@@ -52,7 +52,7 @@ clean:
 # Run linter
 lint:
 	@echo "Running linter..."
-	golangci-lint run --timeout=10m --build-tags=sqlite_fts5
+	golangci-lint run --timeout=10m
 
 # Format code
 fmt:
@@ -65,11 +65,12 @@ run-mcp: build
 	@echo "Starting MCP server..."
 	./chronicle mcp
 
-# Show development database location
+# Show development data location
 dev-db:
-	@echo "Database location:"
-	@echo "  Default: ~/.local/share/chronicle/chronicle.db"
-	@echo "  Override with: CHRONICLE_DB_PATH=/path/to/db"
+	@echo "Data location:"
+	@echo "  Default: ~/.local/share/chronicle/"
+	@echo "  Config:  ~/.config/chronicle/config.json"
+	@echo "  Override data_dir in config.json or run: chronicle setup"
 
 # Create a release build with goreleaser
 release:

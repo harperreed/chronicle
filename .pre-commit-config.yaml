@@ -1,4 +1,4 @@
-# ABOUTME: Pre-commit hooks configuration for pagen project
+# ABOUTME: Pre-commit hooks configuration for chronicle project
 # ABOUTME: Runs formatting, linting, and tests before each commit
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -26,7 +26,7 @@ repos:
       - id: golangci-lint
         args: ['--timeout=10m', '--fix']
       - id: go-unit-tests
-        args: ['-tags=sqlite_fts5', '-race', '-count=1', './...']  # -count=1 disables test caching
+        args: ['-race', '-count=1', './...']  # -count=1 disables test caching
 
   - repo: local
     hooks:
