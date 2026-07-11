@@ -281,3 +281,48 @@ func TestMigrateRoundTrip_MarkdownToSqliteToMarkdown(t *testing.T) {
 	// Phase 4: Verify all data
 	verifyMigratedEntries(t, final, entries)
 }
+
+func TestMigrateMarkdownToSqlitePreservesOffsetAndNanoseconds(t *testing.T) {
+	src, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create source store: %v", err)
+	}
+	defer src.Close()
+
+	location := time.FixedZone("offset", 60*60)
+	want := Entry{
+		ID:        "offset-fractional",
+		Timestamp: time.Date(2026, 7, 10, 12, 0, 0, 123456789, location),
+		Message:   "migrated timestamp",
+	}
+	if _, err := src.CreateEntry(want); err != nil {
+		t.Fatalf("create source entry: %v", err)
+	}
+
+	dst, err := NewSqliteStore(filepath.Join(t.TempDir(), "chronicle.db"))
+	if err != nil {
+		t.Fatalf("create destination store: %v", err)
+	}
+	defer dst.Close()
+
+	summary, err := MigrateData(src, dst)
+	if err != nil {
+		t.Fatalf("migrate entry: %v", err)
+	}
+	if summary.Entries != 1 {
+		t.Fatalf("migrated entries = %d, want 1", summary.Entries)
+	}
+
+	got, err := dst.GetEntry(want.ID)
+	if err != nil {
+		t.Fatalf("read migrated entry: %v", err)
+	}
+	if !got.Timestamp.Equal(want.Timestamp) || got.Timestamp.Nanosecond() != want.Timestamp.Nanosecond() {
+		t.Fatalf("timestamp = %v, want instant %v", got.Timestamp, want.Timestamp)
+	}
+	_, gotOffset := got.Timestamp.Zone()
+	_, wantOffset := want.Timestamp.Zone()
+	if gotOffset != wantOffset {
+		t.Fatalf("offset = %d, want %d", gotOffset, wantOffset)
+	}
+}

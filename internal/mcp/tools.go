@@ -51,8 +51,8 @@ type ListEntriesOutput struct {
 type SearchEntriesInput struct {
 	Text  string   `json:"text,omitempty" jsonschema:"Text to search for in entries"`
 	Tags  []string `json:"tags,omitempty" jsonschema:"Filter by tags"`
-	Since string   `json:"since,omitempty" jsonschema:"Start date/time (e.g. '2025-01-01' or 'yesterday')"`
-	Until string   `json:"until,omitempty" jsonschema:"End date/time"`
+	Since string   `json:"since,omitempty" jsonschema:"Accepted for compatibility; currently ignored by search_entries"`
+	Until string   `json:"until,omitempty" jsonschema:"Accepted for compatibility; currently ignored by search_entries"`
 	Limit int      `json:"limit,omitempty" jsonschema:"Maximum results (default 20)"`
 }
 
@@ -64,7 +64,7 @@ type RememberThisInput struct {
 
 // WhatWasIDoingInput defines input for what_was_i_doing tool.
 type WhatWasIDoingInput struct {
-	Timeframe string `json:"timeframe,omitempty" jsonschema:"Timeframe to search (today, yesterday, this week, last N hours),default=today"`
+	Timeframe string `json:"timeframe,omitempty" jsonschema:"Accepted for compatibility; currently ignored, and the tool returns up to 20 recent entries"`
 }
 
 // WhatWasIDoingOutput provides narrative summary.
@@ -90,14 +90,14 @@ func (s *Server) registerTools() {
 	// list_entries tool
 	listEntriesTool := &mcp.Tool{
 		Name:        "list_entries",
-		Description: "Retrieve recent chronicle entries. Use this to answer questions like 'what did I do today/recently' or 'show my recent work'.",
+		Description: "Retrieve recent chronicle entries. Use this to answer questions like 'what did I do recently' or 'show my recent work'.",
 	}
 	mcp.AddTool(s.mcpServer, listEntriesTool, s.handleListEntries)
 
 	// search_entries tool
 	searchEntriesTool := &mcp.Tool{
 		Name:        "search_entries",
-		Description: "Search chronicle history by text, tags, or date range. Use this when the user wants to find specific past activities or recall when something happened.",
+		Description: "Search chronicle history by text or tags. The accepted since and until inputs are currently ignored.",
 	}
 	mcp.AddTool(s.mcpServer, searchEntriesTool, s.handleSearchEntries)
 
@@ -111,7 +111,7 @@ func (s *Server) registerTools() {
 	// what_was_i_doing tool
 	whatWasIDoingTool := &mcp.Tool{
 		Name:        "what_was_i_doing",
-		Description: "Recall the user's recent activities and context. Use this at the start of conversations to understand what they've been working on, or when they ask 'what was I doing' or 'where did I leave off'.",
+		Description: "Recall up to 20 of the user's recent activities and context. The accepted timeframe input is currently ignored.",
 	}
 	mcp.AddTool(s.mcpServer, whatWasIDoingTool, s.handleWhatWasIDoing)
 
@@ -335,12 +335,12 @@ func (s *Server) handleWhatWasIDoing(ctx context.Context, req *mcp.CallToolReque
 
 	// Build narrative summary
 	var summary strings.Builder
-	summary.WriteString(fmt.Sprintf("Based on %d recent entries:\n\n", listOutput.Count))
+	_, _ = fmt.Fprintf(&summary, "Based on %d recent entries:\n\n", listOutput.Count)
 
 	for _, entry := range listOutput.Entries {
-		summary.WriteString(fmt.Sprintf("- %s: %s", entry.Timestamp, entry.Message))
+		_, _ = fmt.Fprintf(&summary, "- %s: %s", entry.Timestamp, entry.Message)
 		if len(entry.Tags) > 0 {
-			summary.WriteString(fmt.Sprintf(" [%s]", strings.Join(entry.Tags, ", ")))
+			_, _ = fmt.Fprintf(&summary, " [%s]", strings.Join(entry.Tags, ", "))
 		}
 		summary.WriteString("\n")
 	}

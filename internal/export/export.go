@@ -39,7 +39,7 @@ func ToMarkdown(entries []storage.Entry) (string, error) {
 
 	// Header
 	sb.WriteString("# Chronicle Export\n\n")
-	sb.WriteString(fmt.Sprintf("Generated: %s\n\n", time.Now().Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "Generated: %s\n\n", time.Now().Format(time.RFC3339))
 	sb.WriteString("---\n\n")
 
 	if len(entries) == 0 {
@@ -63,7 +63,7 @@ func ToMarkdown(entries []storage.Entry) (string, error) {
 	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
 
 	for _, date := range dates {
-		sb.WriteString(fmt.Sprintf("## %s\n\n", date))
+		fmt.Fprintf(&sb, "## %s\n\n", date)
 
 		dateEntries := byDate[date]
 		// Sort entries by timestamp descending within the day
@@ -73,21 +73,21 @@ func ToMarkdown(entries []storage.Entry) (string, error) {
 
 		for _, entry := range dateEntries {
 			timeStr := entry.Timestamp.Format("15:04:05")
-			sb.WriteString(fmt.Sprintf("### %s - %s\n", timeStr, entry.Message))
-			sb.WriteString(fmt.Sprintf("- **ID**: %s\n", entry.ID))
+			fmt.Fprintf(&sb, "### %s - %s\n", timeStr, entry.Message)
+			fmt.Fprintf(&sb, "- **ID**: %s\n", entry.ID)
 
 			if len(entry.Tags) > 0 {
-				sb.WriteString(fmt.Sprintf("- **Tags**: %s\n", strings.Join(entry.Tags, ", ")))
+				fmt.Fprintf(&sb, "- **Tags**: %s\n", strings.Join(entry.Tags, ", "))
 			}
 
 			if entry.Hostname != "" {
-				sb.WriteString(fmt.Sprintf("- **Host**: %s\n", entry.Hostname))
+				fmt.Fprintf(&sb, "- **Host**: %s\n", entry.Hostname)
 			}
 			if entry.Username != "" {
-				sb.WriteString(fmt.Sprintf("- **User**: %s\n", entry.Username))
+				fmt.Fprintf(&sb, "- **User**: %s\n", entry.Username)
 			}
 			if entry.WorkingDirectory != "" {
-				sb.WriteString(fmt.Sprintf("- **Directory**: %s\n", entry.WorkingDirectory))
+				fmt.Fprintf(&sb, "- **Directory**: %s\n", entry.WorkingDirectory)
 			}
 
 			sb.WriteString("\n")

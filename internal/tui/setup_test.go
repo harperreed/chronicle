@@ -178,8 +178,11 @@ func TestSetupModel_ViewDone(t *testing.T) {
 	m.inputs[1].SetValue("/data/chronicle")
 	m.step = StepDone
 	view := m.View()
-	if !strings.Contains(view, "saved") {
-		t.Error("expected StepDone view to mention saved")
+	if !strings.Contains(view, "Configuration ready!") {
+		t.Errorf("expected StepDone view to report configuration ready, got %q", view)
+	}
+	if strings.Contains(strings.ToLower(view), "saved") {
+		t.Errorf("expected StepDone view not to claim configuration was saved, got %q", view)
 	}
 }
 

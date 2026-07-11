@@ -94,8 +94,8 @@ var searchCmd = &cobra.Command{
 
 func init() {
 	searchCmd.Flags().StringArrayVarP(&searchTags, "tag", "t", []string{}, "Filter by tags")
-	searchCmd.Flags().StringVar(&searchSince, "since", "", "Start date (natural language or ISO)")
-	searchCmd.Flags().StringVar(&searchUntil, "until", "", "End date (natural language or ISO)")
+	searchCmd.Flags().StringVar(&searchSince, "since", "", "Start date or timestamp (date-only values use UTC midnight)")
+	searchCmd.Flags().StringVar(&searchUntil, "until", "", "End date or timestamp (date-only values use UTC midnight)")
 	searchCmd.Flags().IntVarP(&searchLimit, "limit", "n", 100, "Maximum results")
 	searchCmd.Flags().BoolVar(&searchJSONOutput, "json", false, "Output as JSON")
 	rootCmd.AddCommand(searchCmd)

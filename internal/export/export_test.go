@@ -38,30 +38,45 @@ func TestMarkdownExport(t *testing.T) {
 		t.Fatalf("ToMarkdown failed: %v", err)
 	}
 
-	// Check header
-	if !strings.Contains(output, "# Chronicle Export") {
-		t.Error("expected markdown header")
+	lines := strings.Split(output, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("markdown output is missing its generated timestamp: %q", output)
 	}
-	if !strings.Contains(output, "Generated:") {
-		t.Error("expected generated timestamp")
+	generatedAt := strings.TrimPrefix(lines[2], "Generated: ")
+	if generatedAt == lines[2] {
+		t.Fatalf("generated timestamp line has an unexpected format: %q", lines[2])
 	}
+	if _, err := time.Parse(time.RFC3339, generatedAt); err != nil {
+		t.Fatalf("generated timestamp is not RFC3339: %q: %v", generatedAt, err)
+	}
+	lines[2] = "Generated: <timestamp>"
 
-	// Check date header (entries should be grouped by date)
-	if !strings.Contains(output, "## 2026-01-31") {
-		t.Error("expected date header")
-	}
+	expected := `# Chronicle Export
 
-	// Check entry content
-	if !strings.Contains(output, "deployed v2.1.0") {
-		t.Error("expected first entry message")
-	}
-	if !strings.Contains(output, "fixed login bug") {
-		t.Error("expected second entry message")
-	}
+Generated: <timestamp>
 
-	// Check tags
-	if !strings.Contains(output, "deployment") {
-		t.Error("expected deployment tag")
+---
+
+## 2026-01-31
+
+### 14:32:15 - deployed v2.1.0
+- **ID**: abc123
+- **Tags**: deployment, production
+- **Host**: MacBook-Pro
+- **User**: harper
+- **Directory**: /home/harper/app
+
+### 10:15:00 - fixed login bug
+- **ID**: def456
+- **Tags**: bugfix
+- **Host**: MacBook-Pro
+- **User**: harper
+- **Directory**: /home/harper/app
+
+`
+
+	if normalized := strings.Join(lines, "\n"); normalized != expected {
+		t.Errorf("markdown output mismatch:\ngot:\n%s\nwant:\n%s", normalized, expected)
 	}
 }
 

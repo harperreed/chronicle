@@ -10,7 +10,7 @@ Timestamped activity logging with tags and full-text search. Track accomplishmen
 ## When to use chronicle
 
 - User just completed something significant
-- User asks "what did I do today/yesterday/this week?"
+- User asks what they did recently
 - User wants to log an accomplishment or decision
 - User needs to recall when something happened
 
@@ -20,7 +20,7 @@ Timestamped activity logging with tags and full-text search. Track accomplishmen
 |------|---------|
 | `mcp__chronicle__add_entry` | Log a new entry |
 | `mcp__chronicle__list_entries` | Get recent entries |
-| `mcp__chronicle__search_entries` | Search by text/tags/date |
+| `mcp__chronicle__search_entries` | Search by text or tags |
 | `mcp__chronicle__find_when_i` | Find when something happened |
 | `mcp__chronicle__what_was_i_doing` | Recall recent context |
 | `mcp__chronicle__remember_this` | Quick log with auto-tags |
@@ -32,9 +32,9 @@ Timestamped activity logging with tags and full-text search. Track accomplishmen
 mcp__chronicle__add_entry(message="Deployed v2.0 to production", tags=["deployment", "milestone"])
 ```
 
-### What did I do today?
+### What have I been doing recently?
 ```
-mcp__chronicle__what_was_i_doing(timeframe="today")
+mcp__chronicle__what_was_i_doing()
 ```
 
 ### Find when something happened
@@ -44,13 +44,19 @@ mcp__chronicle__find_when_i(what="deploy the authentication service")
 
 ### Search with filters
 ```
-mcp__chronicle__search_entries(text="refactor", tags=["backend"], since="2026-01-01")
+mcp__chronicle__search_entries(text="refactor", tags=["backend"])
 ```
 
 ### Quick remember
 ```
 mcp__chronicle__remember_this(activity="Fixed the memory leak in the worker pool", context="Part of performance optimization sprint")
 ```
+
+## Current query limitations
+
+- `search_entries` accepts `since` and `until` for compatibility, but currently ignores them. Text, tags, and limit are applied.
+- `what_was_i_doing` accepts `timeframe` for compatibility, but currently ignores it and returns up to 20 recent entries.
+- The CLI `search --since/--until` flags apply absolute dates such as `2026-01-01` or ISO timestamps. Relative phrases such as `yesterday` are not supported.
 
 ## Proactive usage
 

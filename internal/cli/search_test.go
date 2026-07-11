@@ -33,12 +33,18 @@ func TestSearchCommand(t *testing.T) {
 		if flag == nil {
 			t.Fatal("expected since flag to exist")
 		}
+		if flag.Usage != "Start date or timestamp (date-only values use UTC midnight)" {
+			t.Errorf("unexpected since flag help: %q", flag.Usage)
+		}
 	})
 
 	t.Run("has until flag", func(t *testing.T) {
 		flag := searchCmd.Flags().Lookup("until")
 		if flag == nil {
 			t.Fatal("expected until flag to exist")
+		}
+		if flag.Usage != "End date or timestamp (date-only values use UTC midnight)" {
+			t.Errorf("unexpected until flag help: %q", flag.Usage)
 		}
 	})
 

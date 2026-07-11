@@ -7,12 +7,39 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/harper/chronicle/internal/config"
 	"github.com/harper/chronicle/internal/storage"
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func connectTestClient(t *testing.T, mcpServer *gomcp.Server) *gomcp.ClientSession {
+	t.Helper()
+
+	serverTransport, clientTransport := gomcp.NewInMemoryTransports()
+	serverSession, err := mcpServer.Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatalf("failed to connect MCP server: %v", err)
+	}
+
+	client := gomcp.NewClient(&gomcp.Implementation{Name: "chronicle-test-client", Version: "0.0.0"}, nil)
+	clientSession, err := client.Connect(context.Background(), clientTransport, nil)
+	if err != nil {
+		_ = serverSession.Close()
+		t.Fatalf("failed to connect MCP client: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = clientSession.Close()
+		_ = serverSession.Close()
+	})
+
+	return clientSession
+}
 
 func TestHandleRecentActivity(t *testing.T) {
 	server, store := newTestServer(t)
@@ -174,17 +201,21 @@ func TestHandleTodaySummary(t *testing.T) {
 	server, store := newTestServer(t)
 	defer store.Close()
 
-	// Create an entry for today
-	entry := storage.Entry{
-		Timestamp: time.Now(),
-		Message:   "today's task",
-		Tags:      []string{"today"},
+	now := time.Now()
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	entries := []storage.Entry{
+		{Timestamp: startOfToday.Add(-time.Nanosecond), Message: "yesterday's task"},
+		{Timestamp: startOfToday, Message: "today starts"},
+		{Timestamp: startOfToday.AddDate(0, 0, 1).Add(-time.Nanosecond), Message: "today ends"},
+		{Timestamp: startOfToday.AddDate(0, 0, 1), Message: "tomorrow's task"},
 	}
-	if _, err := store.CreateEntry(entry); err != nil {
-		t.Fatalf("failed to create test entry: %v", err)
+	for _, entry := range entries {
+		if _, err := store.CreateEntry(entry); err != nil {
+			t.Fatalf("failed to create test entry: %v", err)
+		}
 	}
 
-	t.Run("returns markdown summary", func(t *testing.T) {
+	t.Run("returns only the current local calendar day as markdown", func(t *testing.T) {
 		result, err := server.handleTodaySummary(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -207,8 +238,15 @@ func TestHandleTodaySummary(t *testing.T) {
 			t.Error("expected markdown header")
 		}
 
-		if !strings.Contains(content.Text, "today's task") {
-			t.Error("expected entry message in summary")
+		for _, bullet := range []string{"- **00:00:00**: today starts", "- **23:59:59**: today ends"} {
+			if !strings.Contains(content.Text, bullet) {
+				t.Errorf("expected summary to contain timestamped bullet %q", bullet)
+			}
+		}
+		for _, message := range []string{"yesterday's task", "tomorrow's task"} {
+			if strings.Contains(content.Text, message) {
+				t.Errorf("expected summary to exclude %q", message)
+			}
 		}
 	})
 
@@ -232,7 +270,9 @@ func TestHandleProjectContext(t *testing.T) {
 	server, store := newTestServer(t)
 	defer store.Close()
 
-	t.Run("returns JSON structure", func(t *testing.T) {
+	t.Run("reports no config from an unconfigured directory", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+
 		result, err := server.handleProjectContext(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -251,97 +291,99 @@ func TestHandleProjectContext(t *testing.T) {
 			t.Errorf("expected MIME type 'application/json', got: %s", content.MIMEType)
 		}
 
-		// Verify JSON is valid
-		var contextData map[string]interface{}
+		var contextData struct {
+			HasProjectConfig bool                  `json:"has_project_config"`
+			ProjectRoot      string                `json:"project_root"`
+			Config           *config.ProjectConfig `json:"config"`
+			Message          string                `json:"message"`
+		}
 		if err := json.Unmarshal([]byte(content.Text), &contextData); err != nil {
-			t.Errorf("failed to parse JSON: %v", err)
-		}
-
-		// Should have has_project_config field
-		if _, ok := contextData["has_project_config"]; !ok {
-			t.Error("expected 'has_project_config' field")
-		}
-
-		// Should have message field
-		if _, ok := contextData["message"]; !ok {
-			t.Error("expected 'message' field")
-		}
-	})
-
-	t.Run("returns no project config message when not in project", func(t *testing.T) {
-		// Run from a temp directory without .chronicle
-		result, err := server.handleProjectContext(context.Background(), nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		var contextData map[string]interface{}
-		if err := json.Unmarshal([]byte(result.Contents[0].Text), &contextData); err != nil {
 			t.Fatalf("failed to parse JSON: %v", err)
 		}
-
-		// Verify we get a message either way
-		msg, ok := contextData["message"].(string)
-		if !ok {
-			t.Fatal("expected message to be a string")
+		if contextData.HasProjectConfig {
+			t.Error("expected has_project_config to be false")
 		}
-
-		if msg == "" {
-			t.Error("expected non-empty message")
+		if contextData.ProjectRoot != "" || contextData.Config != nil {
+			t.Errorf("expected no project details, got root %q and config %#v", contextData.ProjectRoot, contextData.Config)
+		}
+		if contextData.Message != "No .chronicle project configuration found in current directory tree" {
+			t.Errorf("unexpected message: %q", contextData.Message)
 		}
 	})
-}
 
-func TestHandleProjectContextWithConfig(t *testing.T) {
-	server, store := newTestServer(t)
-	defer store.Close()
-
-	t.Run("handles directory with .chronicle config", func(t *testing.T) {
-		// Create temp directory with .chronicle config
-		tempDir := t.TempDir()
-		chronicleDir := tempDir + "/.chronicle"
-		if err := os.MkdirAll(chronicleDir, 0755); err != nil {
-			t.Fatalf("failed to create .chronicle dir: %v", err)
+	t.Run("returns parsed config from the production .chronicle file", func(t *testing.T) {
+		projectRoot := t.TempDir()
+		configPath := filepath.Join(projectRoot, ".chronicle")
+		configContent := "local_logging = true\nlog_dir = \"project-logs\"\nlog_format = \"json\"\n"
+		if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+			t.Fatalf("failed to write project config: %v", err)
 		}
-
-		configContent := `local_logging = true
-log_dir = "logs"
-log_format = "markdown"`
-
-		if err := os.WriteFile(chronicleDir+"/config.toml", []byte(configContent), 0644); err != nil {
-			t.Fatalf("failed to write config: %v", err)
+		nestedDir := filepath.Join(projectRoot, "nested", "directory")
+		if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+			t.Fatalf("failed to create nested directory: %v", err)
 		}
-
-		// Change to temp dir temporarily
-		originalWd, _ := os.Getwd()
-		if err := os.Chdir(tempDir); err != nil {
-			t.Fatalf("failed to change directory: %v", err)
-		}
-		defer os.Chdir(originalWd)
+		t.Chdir(nestedDir)
 
 		result, err := server.handleProjectContext(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(result.Contents) == 0 {
-			t.Fatal("expected content in result")
+		var contextData struct {
+			HasProjectConfig bool                  `json:"has_project_config"`
+			ProjectRoot      string                `json:"project_root"`
+			Config           *config.ProjectConfig `json:"config"`
+			Message          string                `json:"message"`
 		}
-
-		var contextData map[string]interface{}
 		if err := json.Unmarshal([]byte(result.Contents[0].Text), &contextData); err != nil {
 			t.Fatalf("failed to parse JSON: %v", err)
 		}
+		if !contextData.HasProjectConfig {
+			t.Error("expected has_project_config to be true")
+		}
+		if contextData.ProjectRoot != projectRoot {
+			t.Errorf("expected project root %q, got %q", projectRoot, contextData.ProjectRoot)
+		}
+		if contextData.Config == nil {
+			t.Fatal("expected parsed project config")
+		}
+		if !contextData.Config.LocalLogging || contextData.Config.LogDir != "project-logs" || contextData.Config.LogFormat != "json" {
+			t.Errorf("unexpected parsed config: %#v", contextData.Config)
+		}
+		if contextData.Message != "Project-specific chronicle configuration found" {
+			t.Errorf("unexpected message: %q", contextData.Message)
+		}
+	})
 
-		// Should indicate project config was found
-		hasConfig, ok := contextData["has_project_config"].(bool)
-		if !ok {
-			t.Fatal("expected has_project_config to be a bool")
+	t.Run("reports a discovered but malformed config without parsed details", func(t *testing.T) {
+		projectRoot := t.TempDir()
+		if err := os.WriteFile(filepath.Join(projectRoot, ".chronicle"), []byte("not valid = [toml"), 0o600); err != nil {
+			t.Fatalf("failed to write malformed project config: %v", err)
+		}
+		t.Chdir(projectRoot)
+
+		result, err := server.handleProjectContext(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if !hasConfig {
-			// This is ok - it means the config wasn't loadable
-			// We're just verifying the structure
+		var contextData struct {
+			HasProjectConfig bool                  `json:"has_project_config"`
+			ProjectRoot      string                `json:"project_root"`
+			Config           *config.ProjectConfig `json:"config"`
+			Message          string                `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(result.Contents[0].Text), &contextData); err != nil {
+			t.Fatalf("failed to parse JSON: %v", err)
+		}
+		if !contextData.HasProjectConfig || contextData.ProjectRoot != projectRoot {
+			t.Errorf("expected discovered project root %q, got %#v", projectRoot, contextData)
+		}
+		if contextData.Config != nil {
+			t.Errorf("expected no parsed config, got %#v", contextData.Config)
+		}
+		if !strings.HasPrefix(contextData.Message, "Failed to load .chronicle project configuration: ") {
+			t.Errorf("expected descriptive config error, got %q", contextData.Message)
 		}
 	})
 }
@@ -384,14 +426,36 @@ func TestResourceContentFields(t *testing.T) {
 	})
 }
 
-func TestRegisterResourcesCall(t *testing.T) {
+func TestRegisteredResourceDescriptors(t *testing.T) {
 	server, store := newTestServer(t)
 	defer store.Close()
+	server.registerResources()
+	clientSession := connectTestClient(t, server.mcpServer)
 
-	t.Run("registers all resources without error", func(t *testing.T) {
-		// Should not panic
-		server.registerResources()
-	})
+	result, err := clientSession.ListResources(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("failed to list registered resources: %v", err)
+	}
+	if len(result.Resources) != 4 {
+		t.Fatalf("expected 4 resources, got %d", len(result.Resources))
+	}
+
+	descriptions := make(map[string]string, len(result.Resources))
+	for _, resource := range result.Resources {
+		descriptions[resource.URI] = resource.Description
+	}
+
+	want := map[string]string{
+		"chronicle://recent-activity": "Last 10 chronicle entries with full metadata",
+		"chronicle://tags":            "Tag usage counts keyed by tag",
+		"chronicle://today-summary":   "Today's entries as timestamped message bullets",
+		"chronicle://project-context": "Current directory's project root and .chronicle configuration",
+	}
+	for uri, description := range want {
+		if descriptions[uri] != description {
+			t.Errorf("resource %s: expected description %q, got %q", uri, description, descriptions[uri])
+		}
+	}
 }
 
 func TestHandleRecentActivityWithManyEntries(t *testing.T) {

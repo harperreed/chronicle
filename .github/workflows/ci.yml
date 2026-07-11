@@ -1,5 +1,5 @@
 # ABOUTME: GitHub Actions CI workflow for chronicle
-# ABOUTME: Runs tests, linting, and builds on multiple Go versions
+# ABOUTME: Runs tests, coverage, linting, and builds with the module-declared Go toolchain
 name: CI
 
 on:
@@ -12,9 +12,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.21', '1.22', '1.23']
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -22,9 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version-file: go.mod
           cache: true
 
       - name: Cache Go modules
@@ -42,11 +39,9 @@ jobs:
         run: go test -short -race ./...
 
       - name: Run tests with coverage
-        if: matrix.go-version == '1.23'
         run: go test -short -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
-        if: matrix.go-version == '1.23'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
@@ -61,9 +56,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          go-version-file: go.mod
           cache: true
 
       - name: Run golangci-lint
@@ -81,9 +76,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          go-version-file: go.mod
           cache: true
 
       - name: Build binary

@@ -20,7 +20,7 @@ func (s *Server) registerPrompts() {
 
 When to use chronicle:
 - User accomplishes something worth remembering (deployed, fixed, decided, learned)
-- User asks about past activities ("what did I do yesterday?")
+- User asks about recent activities ("what did I do recently?")
 - User wants to recall when something happened
 - At start of work sessions to load context
 
@@ -30,8 +30,8 @@ Best practices:
 - Include enough detail to jog memory later
 - Think of it as a work journal that can be searched
 
-Chronicle syncs automatically across all your devices via Charm Cloud.
-The user has configured chronicle to track their development work and important decisions.`
+Chronicle uses the configured storage on this machine. Storage location, sharing, and synchronization depend on that configuration.
+Do not assume a particular setup. Use the available tools and resources, and report configuration or storage errors plainly.`
 
 		result := &mcp.GetPromptResult{
 			Description: "Getting started with chronicle",

@@ -4,11 +4,15 @@
 package storage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,14 +21,20 @@ import (
 )
 
 // MarkdownStore provides file-based storage for chronicle entries using markdown files.
-// Entries are organized in date-based directories: <dataDir>/YYYY/MM/DD/<slug>-<shortid>.md.
+// Entries are organized in date-based directories: <dataDir>/YYYY/MM/DD/<slug>-<id-digest>.md.
 type MarkdownStore struct {
-	dataDir      string
-	lastModified time.Time
+	dataDir        string
+	lastModifiedMu sync.RWMutex
+	lastModified   time.Time
 }
 
 // Compile-time check that MarkdownStore implements Storage.
 var _ Storage = (*MarkdownStore)(nil)
+
+var (
+	errMarkdownEntryNotFound      = errors.New("entry not found")
+	errMarkdownEntryAlreadyExists = errors.New("entry already exists")
+)
 
 // NewMarkdownStore creates a new markdown-backed store rooted at dataDir.
 func NewMarkdownStore(dataDir string) (*MarkdownStore, error) {
@@ -57,15 +67,17 @@ func (s *MarkdownStore) entryDirPath(t time.Time) string {
 	return filepath.Join(s.dataDir, t.Format("2006"), t.Format("01"), t.Format("02"))
 }
 
-// entryFileName generates a filename for an entry: <slug>-<shortid>.md.
+// entryFileName generates a filename for an entry: <slug>-<id-digest>.md.
 func entryFileName(message string, id string) string {
 	// Take first few words for the slug, keep it short
 	slug := mdstore.Slugify(truncateForSlug(message))
-	shortID := id
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	return slug + "-" + shortID + ".md"
+	return slug + "-" + entryIDFileComponent(id) + ".md"
+}
+
+// entryIDFileComponent hashes the full ID into a fixed-length lowercase filename component.
+func entryIDFileComponent(id string) string {
+	digest := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(digest[:])
 }
 
 // truncateForSlug limits message text to a reasonable slug length.
@@ -85,7 +97,7 @@ func truncateForSlug(message string) string {
 func renderEntry(entry *Entry) (string, error) {
 	fm := entryFrontmatter{
 		ID:               entry.ID,
-		Timestamp:        mdstore.FormatTime(entry.Timestamp.UTC()),
+		Timestamp:        mdstore.FormatTime(entry.Timestamp),
 		Hostname:         entry.Hostname,
 		Username:         entry.Username,
 		WorkingDirectory: entry.WorkingDirectory,
@@ -97,6 +109,64 @@ func renderEntry(entry *Entry) (string, error) {
 		return "", fmt.Errorf("render entry frontmatter: %w", err)
 	}
 	return content, nil
+}
+
+// moveEntryFile publishes content at a new path without overwriting an existing file.
+// The old path remains authoritative unless both publishing and old-path removal succeed.
+func moveEntryFile(oldPath, newPath string, content []byte) error {
+	if err := mdstore.EnsureDir(filepath.Dir(newPath)); err != nil {
+		return fmt.Errorf("create updated entry directory: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(newPath), ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create updated entry temporary file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmpClosed := false
+	defer func() {
+		if !tmpClosed {
+			_ = tmp.Close()
+		}
+		_ = os.Remove(tmpPath)
+	}()
+
+	if _, err := tmp.Write(content); err != nil {
+		return fmt.Errorf("write updated entry temporary file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync updated entry temporary file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close updated entry temporary file: %w", err)
+	}
+	tmpClosed = true
+
+	if err := os.Link(tmpPath, newPath); err != nil {
+		return fmt.Errorf("publish updated entry: %w", err)
+	}
+	if err := os.Remove(tmpPath); err != nil {
+		rollbackErr := os.Remove(newPath)
+		return errors.Join(
+			fmt.Errorf("remove updated entry temporary file: %w", err),
+			wrapRollbackError(rollbackErr),
+		)
+	}
+	if err := os.Remove(oldPath); err != nil {
+		rollbackErr := os.Remove(newPath)
+		return errors.Join(
+			fmt.Errorf("remove previous entry file: %w", err),
+			wrapRollbackError(rollbackErr),
+		)
+	}
+	return nil
+}
+
+func wrapRollbackError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("rollback updated entry: %w", err)
 }
 
 // parseEntryFile reads and parses an entry markdown file.
@@ -134,6 +204,7 @@ func parseEntryFile(path string) (*Entry, error) {
 
 // CreateEntry creates a new entry and returns its ID.
 func (s *MarkdownStore) CreateEntry(entry Entry) (string, error) {
+	hasSuppliedID := entry.ID != ""
 	if entry.ID == "" {
 		entry.ID = uuid.New().String()
 	}
@@ -151,17 +222,45 @@ func (s *MarkdownStore) CreateEntry(entry Entry) (string, error) {
 		return "", fmt.Errorf("render entry: %w", err)
 	}
 
-	var writeErr error
 	err = mdstore.WithLock(s.dataDir, func() error {
-		writeErr = mdstore.AtomicWrite(filePath, []byte(content))
-		return writeErr
+		if hasSuppliedID {
+			if checkErr := s.checkEntryIDAvailable(entry.ID); checkErr != nil {
+				return checkErr
+			}
+		}
+		return mdstore.AtomicWrite(filePath, []byte(content))
 	})
 	if err != nil {
 		return "", fmt.Errorf("write entry file: %w", err)
 	}
 
-	s.lastModified = time.Now()
+	s.markModified()
 	return entry.ID, nil
+}
+
+// checkEntryIDAvailable strictly inspects every markdown file before a supplied ID is created.
+func (s *MarkdownStore) checkEntryIDAvailable(id string) error {
+	err := filepath.Walk(s.dataDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("inspect %s: %w", path, walkErr)
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+
+		entry, parseErr := parseEntryFile(path)
+		if parseErr != nil {
+			return fmt.Errorf("inspect entry file %s: %w", path, parseErr)
+		}
+		if entry.ID == id {
+			return fmt.Errorf("%w: %s", errMarkdownEntryAlreadyExists, id)
+		}
+		return nil
+	})
+	if err == nil || errors.Is(err, errMarkdownEntryAlreadyExists) {
+		return err
+	}
+	return fmt.Errorf("check entry ID uniqueness: %w", err)
 }
 
 // GetEntry retrieves an entry by ID.
@@ -180,11 +279,6 @@ func (s *MarkdownStore) UpdateEntry(entry Entry) error {
 		return fmt.Errorf("entry ID required")
 	}
 
-	oldPath, err := s.findEntryFile(entry.ID)
-	if err != nil {
-		return err
-	}
-
 	content, err := renderEntry(&entry)
 	if err != nil {
 		return fmt.Errorf("render entry: %w", err)
@@ -196,30 +290,34 @@ func (s *MarkdownStore) UpdateEntry(entry Entry) error {
 	newPath := filepath.Join(dir, fileName)
 
 	return mdstore.WithLock(s.dataDir, func() error {
-		if err := mdstore.AtomicWrite(newPath, []byte(content)); err != nil {
-			return fmt.Errorf("write updated entry: %w", err)
+		oldPath, err := s.findEntryFile(entry.ID)
+		if err != nil {
+			return err
 		}
 
-		// Remove old file if it moved
-		if oldPath != newPath {
-			_ = os.Remove(oldPath)
-			// Clean up empty directories
+		if oldPath == newPath {
+			if err := mdstore.AtomicWrite(newPath, []byte(content)); err != nil {
+				return fmt.Errorf("write updated entry: %w", err)
+			}
+		} else {
+			if err := moveEntryFile(oldPath, newPath, []byte(content)); err != nil {
+				return fmt.Errorf("move updated entry: %w", err)
+			}
 			s.cleanEmptyDirs(filepath.Dir(oldPath))
 		}
 
-		s.lastModified = time.Now()
+		s.markModified()
 		return nil
 	})
 }
 
 // DeleteEntry removes an entry by ID.
 func (s *MarkdownStore) DeleteEntry(id string) error {
-	path, err := s.findEntryFile(id)
-	if err != nil {
-		return err
-	}
-
 	return mdstore.WithLock(s.dataDir, func() error {
+		path, err := s.findEntryFile(id)
+		if err != nil {
+			return err
+		}
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("delete entry file: %w", err)
 		}
@@ -227,7 +325,7 @@ func (s *MarkdownStore) DeleteEntry(id string) error {
 		// Clean up empty directories
 		s.cleanEmptyDirs(filepath.Dir(path))
 
-		s.lastModified = time.Now()
+		s.markModified()
 		return nil
 	})
 }
@@ -244,13 +342,22 @@ func (s *MarkdownStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry,
 		return nil, err
 	}
 
-	// Apply filters
-	var filtered []Entry
+	matchCount := 0
 	for _, entry := range allEntries {
-		if !matchesFilter(entry, filter) {
-			continue
+		if matchesFilter(entry, filter) {
+			matchCount++
 		}
-		filtered = append(filtered, entry)
+	}
+	if matchCount == 0 {
+		return nil, nil
+	}
+
+	// Apply filters with exact capacity while preserving nil for no matches.
+	filtered := make([]Entry, 0, matchCount)
+	for _, entry := range allEntries {
+		if matchesFilter(entry, filter) {
+			filtered = append(filtered, entry)
+		}
 	}
 
 	// Sort by timestamp descending
@@ -268,7 +375,16 @@ func (s *MarkdownStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry,
 
 // LastModified returns when the store was last modified.
 func (s *MarkdownStore) LastModified() time.Time {
+	s.lastModifiedMu.RLock()
+	defer s.lastModifiedMu.RUnlock()
 	return s.lastModified
+}
+
+// markModified records a successful mutation.
+func (s *MarkdownStore) markModified() {
+	s.lastModifiedMu.Lock()
+	s.lastModified = time.Now()
+	s.lastModifiedMu.Unlock()
 }
 
 // Vacuum is a no-op for MarkdownStore.
@@ -295,7 +411,7 @@ func (s *MarkdownStore) Reset() error {
 			}
 		}
 
-		s.lastModified = time.Now()
+		s.markModified()
 		return nil
 	})
 }
@@ -313,12 +429,14 @@ func (s *MarkdownStore) findEntryFile(id string) (string, error) {
 			return nil
 		}
 
-		// Quick check: the filename should contain the short ID
+		// New filenames contain the full ID digest; legacy filenames contain the short ID.
+		idDigest := entryIDFileComponent(id)
 		shortID := id
 		if len(shortID) > 8 {
 			shortID = shortID[:8]
 		}
-		if !strings.Contains(filepath.Base(path), shortID) {
+		fileName := filepath.Base(path)
+		if !strings.Contains(fileName, idDigest) && !strings.Contains(fileName, shortID) {
 			return nil
 		}
 
@@ -339,7 +457,7 @@ func (s *MarkdownStore) findEntryFile(id string) (string, error) {
 	}
 
 	if foundPath == "" {
-		return "", fmt.Errorf("entry not found: %s", id)
+		return "", fmt.Errorf("%w: %s", errMarkdownEntryNotFound, id)
 	}
 
 	return foundPath, nil

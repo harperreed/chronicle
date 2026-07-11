@@ -4,6 +4,8 @@
 package storage
 
 import (
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +24,31 @@ func newTestMarkdownStore(t *testing.T) *MarkdownStore {
 		t.Fatalf("failed to create test markdown store: %v", err)
 	}
 	return store
+}
+
+func markdownEntryFiles(t *testing.T, store *MarkdownStore, id string) []string {
+	t.Helper()
+	var paths []string
+	err := filepath.Walk(store.dataDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		entry, err := parseEntryFile(path)
+		if err != nil {
+			return err
+		}
+		if entry.ID == id {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to inspect markdown entry files: %v", err)
+	}
+	return paths
 }
 
 func TestNewMarkdownStore(t *testing.T) {
@@ -161,9 +188,69 @@ func TestMarkdownUpdateEntry(t *testing.T) {
 	}
 }
 
+func TestMarkdownUpdateEntrySamePathIsAtomic(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	entry := Entry{
+		ID:        "same-path-update",
+		Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Message:   "stable path",
+		Tags:      []string{"before"},
+	}
+	if _, err := store.CreateEntry(entry); err != nil {
+		t.Fatalf("failed to create entry: %v", err)
+	}
+	path, err := store.findEntryFile(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to find entry: %v", err)
+	}
+	beforeData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read entry before update: %v", err)
+	}
+	beforeModified := store.LastModified()
+
+	entry.Tags = []string{"after"}
+	entry.Hostname = "updated-host"
+	expectedContent, err := renderEntry(&entry)
+	if err != nil {
+		t.Fatalf("failed to render expected entry: %v", err)
+	}
+	if err := store.UpdateEntry(entry); err != nil {
+		t.Fatalf("same-path update failed: %v", err)
+	}
+
+	afterPath, err := store.findEntryFile(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to find updated entry: %v", err)
+	}
+	if afterPath != path {
+		t.Errorf("same-path update moved entry: got %q, want %q", afterPath, path)
+	}
+	paths := markdownEntryFiles(t, store, entry.ID)
+	if len(paths) != 1 {
+		t.Fatalf("expected one file for ID, got %d: %v", len(paths), paths)
+	}
+	afterData, err := os.ReadFile(afterPath)
+	if err != nil {
+		t.Fatalf("failed to read entry after update: %v", err)
+	}
+	if string(afterData) == string(beforeData) {
+		t.Error("same-path update did not change file bytes")
+	}
+	if string(afterData) != expectedContent {
+		t.Errorf("same-path update bytes differ from rendered entry:\ngot:  %q\nwant: %q", afterData, expectedContent)
+	}
+	if !store.LastModified().After(beforeModified) {
+		t.Error("LastModified did not advance after successful same-path update")
+	}
+}
+
 func TestMarkdownUpdateEntryNotFound(t *testing.T) {
 	store := newTestMarkdownStore(t)
 	defer store.Close()
+	beforeModified := store.LastModified()
 
 	entry := Entry{
 		ID:        "nonexistent-id",
@@ -174,6 +261,9 @@ func TestMarkdownUpdateEntryNotFound(t *testing.T) {
 	err := store.UpdateEntry(entry)
 	if err == nil {
 		t.Error("expected error for nonexistent entry")
+	}
+	if !store.LastModified().Equal(beforeModified) {
+		t.Error("LastModified changed after failed update")
 	}
 }
 
@@ -189,6 +279,62 @@ func TestMarkdownUpdateEntryNoID(t *testing.T) {
 	err := store.UpdateEntry(entry)
 	if err == nil {
 		t.Error("expected error for entry without ID")
+	}
+}
+
+func TestMarkdownUpdateEntryRejectsUnexpectedDestination(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	original := Entry{
+		ID:        "entry-being-moved",
+		Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Message:   "original message",
+	}
+	if _, err := store.CreateEntry(original); err != nil {
+		t.Fatalf("failed to create original entry: %v", err)
+	}
+	originalPath, err := store.findEntryFile(original.ID)
+	if err != nil {
+		t.Fatalf("failed to find original entry: %v", err)
+	}
+
+	updated := original
+	updated.Timestamp = original.Timestamp.Add(24 * time.Hour)
+	updated.Message = "moved message"
+	destinationPath := filepath.Join(store.entryDirPath(updated.Timestamp), entryFileName(updated.Message, updated.ID))
+	if err := os.MkdirAll(filepath.Dir(destinationPath), 0750); err != nil {
+		t.Fatalf("failed to create destination directory: %v", err)
+	}
+	unexpected := Entry{ID: "unexpected-entry", Timestamp: updated.Timestamp, Message: "must be preserved"}
+	unexpectedContent, err := renderEntry(&unexpected)
+	if err != nil {
+		t.Fatalf("failed to render unexpected entry: %v", err)
+	}
+	if err := os.WriteFile(destinationPath, []byte(unexpectedContent), 0600); err != nil {
+		t.Fatalf("failed to create unexpected destination: %v", err)
+	}
+	before := store.LastModified()
+
+	if err := store.UpdateEntry(updated); err == nil {
+		t.Fatal("expected update to reject an unexpected destination")
+	}
+	if !store.LastModified().Equal(before) {
+		t.Error("LastModified changed after rejected update")
+	}
+	storedOriginal, err := parseEntryFile(originalPath)
+	if err != nil {
+		t.Fatalf("original entry was not preserved: %v", err)
+	}
+	if storedOriginal.Message != original.Message {
+		t.Errorf("original entry changed: got %q, want %q", storedOriginal.Message, original.Message)
+	}
+	storedUnexpected, err := parseEntryFile(destinationPath)
+	if err != nil {
+		t.Fatalf("unexpected destination was not preserved: %v", err)
+	}
+	if storedUnexpected.ID != unexpected.ID || storedUnexpected.Message != unexpected.Message {
+		t.Errorf("unexpected destination changed: got ID %q and message %q", storedUnexpected.ID, storedUnexpected.Message)
 	}
 }
 
@@ -220,10 +366,14 @@ func TestMarkdownDeleteEntry(t *testing.T) {
 func TestMarkdownDeleteEntryNotFound(t *testing.T) {
 	store := newTestMarkdownStore(t)
 	defer store.Close()
+	beforeModified := store.LastModified()
 
 	err := store.DeleteEntry("nonexistent-id")
 	if err == nil {
 		t.Error("expected error for nonexistent entry")
+	}
+	if !store.LastModified().Equal(beforeModified) {
+		t.Error("LastModified changed after failed delete")
 	}
 }
 
@@ -273,6 +423,9 @@ func TestMarkdownListEntriesEmpty(t *testing.T) {
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries, got %d", len(entries))
 	}
+	if entries != nil {
+		t.Errorf("expected nil entries for an empty store, got %#v", entries)
+	}
 }
 
 func TestMarkdownSearchEntriesByText(t *testing.T) {
@@ -299,6 +452,22 @@ func TestMarkdownSearchEntriesByText(t *testing.T) {
 
 	if len(results) != 2 {
 		t.Errorf("expected 2 results, got %d", len(results))
+	}
+}
+
+func TestMarkdownSearchEntriesNoMatchesReturnsNil(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	if _, err := store.CreateEntry(Entry{Timestamp: time.Now(), Message: "present text"}); err != nil {
+		t.Fatalf("failed to create entry: %v", err)
+	}
+	results, err := store.SearchEntries(&SearchFilter{Text: "missing text"}, 10)
+	if err != nil {
+		t.Fatalf("failed to search entries: %v", err)
+	}
+	if results != nil {
+		t.Errorf("expected nil results for a search with no matches, got %#v", results)
 	}
 }
 
@@ -649,6 +818,281 @@ func TestMarkdownCreateEntryWithExistingID(t *testing.T) {
 	}
 }
 
+func TestMarkdownCreateEntryRejectsDuplicateIDAcrossPaths(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	original := Entry{
+		ID:        "duplicate-id",
+		Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Message:   "original message",
+	}
+	if _, err := store.CreateEntry(original); err != nil {
+		t.Fatalf("failed to create original entry: %v", err)
+	}
+	originalPath, err := store.findEntryFile(original.ID)
+	if err != nil {
+		t.Fatalf("failed to find original entry: %v", err)
+	}
+	originalData, err := os.ReadFile(originalPath)
+	if err != nil {
+		t.Fatalf("failed to read original entry: %v", err)
+	}
+
+	duplicate := Entry{
+		ID:        original.ID,
+		Timestamp: original.Timestamp.Add(24 * time.Hour),
+		Message:   "replacement message",
+	}
+	if _, err = store.CreateEntry(duplicate); !errors.Is(err, errMarkdownEntryAlreadyExists) {
+		t.Fatalf("expected duplicate-ID error, got %v", err)
+	}
+	samePathDuplicate := original
+	samePathDuplicate.Tags = []string{"replacement"}
+	if _, err = store.CreateEntry(samePathDuplicate); !errors.Is(err, errMarkdownEntryAlreadyExists) {
+		t.Fatalf("expected same-path duplicate-ID error, got %v", err)
+	}
+
+	entries, err := store.ListEntries(0)
+	if err != nil {
+		t.Fatalf("failed to list entries after rejection: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one entry after rejection, got %d", len(entries))
+	}
+	afterData, err := os.ReadFile(originalPath)
+	if err != nil {
+		t.Fatalf("failed to read original entry after rejection: %v", err)
+	}
+	if string(afterData) != string(originalData) {
+		t.Error("original entry file changed after duplicate rejection")
+	}
+	retrieved, err := store.GetEntry(original.ID)
+	if err != nil {
+		t.Fatalf("failed to get original entry after rejection: %v", err)
+	}
+	if retrieved.Message != original.Message || !retrieved.Timestamp.Equal(original.Timestamp) {
+		t.Errorf("original entry changed after rejection: got message %q at %v", retrieved.Message, retrieved.Timestamp)
+	}
+}
+
+func TestMarkdownCreateEntryFailsClosedForMalformedCandidate(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	entry := Entry{
+		ID:        "malformed-candidate-id",
+		Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Message:   "malformed candidate",
+	}
+	path := filepath.Join(store.entryDirPath(entry.Timestamp), entryFileName(entry.Message, entry.ID))
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		t.Fatalf("failed to create candidate directory: %v", err)
+	}
+	originalData := []byte("not valid chronicle frontmatter\n")
+	if err := os.WriteFile(path, originalData, 0600); err != nil {
+		t.Fatalf("failed to write malformed candidate: %v", err)
+	}
+
+	_, err := store.CreateEntry(entry)
+	if err == nil {
+		t.Fatal("expected uniqueness scan failure for malformed candidate")
+	}
+	if !strings.Contains(err.Error(), "check entry ID uniqueness") {
+		t.Errorf("expected uniqueness scan error, got %v", err)
+	}
+	if errors.Is(err, errMarkdownEntryAlreadyExists) || errors.Is(err, errMarkdownEntryNotFound) {
+		t.Errorf("expected inspection failure rather than duplicate/not-found error, got %v", err)
+	}
+	afterData, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("failed to read malformed candidate after rejection: %v", readErr)
+	}
+	if string(afterData) != string(originalData) {
+		t.Error("malformed candidate was overwritten after uniqueness scan failure")
+	}
+}
+
+func TestMarkdownConcurrentCreateEntryRejectsDuplicateID(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	entries := []Entry{
+		{ID: "concurrent-duplicate-id", Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC), Message: "first message"},
+		{ID: "concurrent-duplicate-id", Timestamp: time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC), Message: "second message"},
+	}
+	start := make(chan struct{})
+	type createResult struct {
+		entry Entry
+		err   error
+	}
+	results := make(chan createResult, len(entries))
+	var wg sync.WaitGroup
+	for _, entry := range entries {
+		wg.Add(1)
+		go func(entry Entry) {
+			defer wg.Done()
+			<-start
+			_, err := store.CreateEntry(entry)
+			results <- createResult{entry: entry, err: err}
+		}(entry)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	var successes, failures int
+	var winner Entry
+	for result := range results {
+		if result.err == nil {
+			successes++
+			winner = result.entry
+		} else {
+			failures++
+			if !errors.Is(result.err, errMarkdownEntryAlreadyExists) {
+				t.Errorf("expected duplicate-specific rejection, got %v", result.err)
+			}
+		}
+	}
+	if successes != 1 || failures != 1 {
+		t.Fatalf("expected one successful create and one rejection, got %d successes and %d rejections", successes, failures)
+	}
+	listed, err := store.ListEntries(0)
+	if err != nil {
+		t.Fatalf("failed to list entries: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("expected one stored entry, got %d", len(listed))
+	}
+	if listed[0].Message != winner.Message || !listed[0].Timestamp.Equal(winner.Timestamp) {
+		t.Errorf("stored entry does not match successful submission: got message %q at %v, want message %q at %v",
+			listed[0].Message, listed[0].Timestamp, winner.Message, winner.Timestamp)
+	}
+}
+
+func TestMarkdownDistinctFullIDsDoNotOverwrite(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	timestamp := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	entries := []Entry{
+		{ID: "abcdefgh-first", Timestamp: timestamp, Message: "same message"},
+		{ID: "abcdefgh-second", Timestamp: timestamp, Message: "same message"},
+	}
+
+	for _, entry := range entries {
+		if _, err := store.CreateEntry(entry); err != nil {
+			t.Fatalf("failed to create entry %q: %v", entry.ID, err)
+		}
+	}
+
+	listed, err := store.ListEntries(0)
+	if err != nil {
+		t.Fatalf("failed to list entries: %v", err)
+	}
+	if len(listed) != len(entries) {
+		t.Errorf("expected %d entries, got %d", len(entries), len(listed))
+	}
+
+	for _, entry := range entries {
+		retrieved, err := store.GetEntry(entry.ID)
+		if err != nil {
+			t.Errorf("failed to get entry %q: %v", entry.ID, err)
+			continue
+		}
+		if retrieved.ID != entry.ID {
+			t.Errorf("expected ID %q, got %q", entry.ID, retrieved.ID)
+		}
+	}
+}
+
+func TestMarkdownCaseFoldDistinctIDsDoNotOverwrite(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	timestamp := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	entries := []Entry{
+		{ID: "aaa", Timestamp: timestamp, Message: "same message"},
+		{ID: "aaG", Timestamp: timestamp, Message: "same message"},
+	}
+	firstEncoding := base64.RawURLEncoding.EncodeToString([]byte(entries[0].ID))
+	secondEncoding := base64.RawURLEncoding.EncodeToString([]byte(entries[1].ID))
+	if firstEncoding == secondEncoding || !strings.EqualFold(firstEncoding, secondEncoding) {
+		t.Fatalf("test IDs must have distinct base64 encodings that differ only by case: %q, %q", firstEncoding, secondEncoding)
+	}
+	if strings.EqualFold(entryFileName(entries[0].Message, entries[0].ID), entryFileName(entries[1].Message, entries[1].ID)) {
+		t.Error("entry filenames collide on a case-insensitive filesystem")
+	}
+
+	for _, entry := range entries {
+		if _, err := store.CreateEntry(entry); err != nil {
+			t.Fatalf("failed to create entry %q: %v", entry.ID, err)
+		}
+	}
+	for _, entry := range entries {
+		retrieved, err := store.GetEntry(entry.ID)
+		if err != nil {
+			t.Errorf("failed to get entry %q: %v", entry.ID, err)
+			continue
+		}
+		if retrieved.ID != entry.ID {
+			t.Errorf("expected ID %q, got %q", entry.ID, retrieved.ID)
+		}
+	}
+}
+
+func TestMarkdownLongCustomIDFitsFilenameLimit(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	entry := Entry{
+		ID:        strings.Repeat("very-long-custom-id-", 32),
+		Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Message:   "long custom ID",
+	}
+	if _, err := store.CreateEntry(entry); err != nil {
+		t.Fatalf("failed to create entry with long custom ID: %v", err)
+	}
+	retrieved, err := store.GetEntry(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to get entry with long custom ID: %v", err)
+	}
+	if retrieved.ID != entry.ID {
+		t.Errorf("expected long custom ID to round trip")
+	}
+}
+
+func TestMarkdownReadsLegacyShortIDFilename(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	entry := Entry{
+		ID:        "abcdefgh-legacy-full-id",
+		Timestamp: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Message:   "legacy entry",
+	}
+	content, err := renderEntry(&entry)
+	if err != nil {
+		t.Fatalf("failed to render legacy entry: %v", err)
+	}
+	dir := store.entryDirPath(entry.Timestamp)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		t.Fatalf("failed to create legacy directory: %v", err)
+	}
+	legacyPath := filepath.Join(dir, "legacy-entry-abcdefgh.md")
+	if err := os.WriteFile(legacyPath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write legacy entry: %v", err)
+	}
+
+	retrieved, err := store.GetEntry(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to get legacy entry: %v", err)
+	}
+	if retrieved.ID != entry.ID {
+		t.Errorf("expected ID %q, got %q", entry.ID, retrieved.ID)
+	}
+}
+
 func TestMarkdownCreateEntryWithoutTimestamp(t *testing.T) {
 	store := newTestMarkdownStore(t)
 	defer store.Close()
@@ -798,6 +1242,108 @@ func TestMarkdownEntryWithFrontmatterChars(t *testing.T) {
 
 // --- Concurrency Tests ---
 
+func TestMarkdownConcurrentUpdatesLeaveOneCurrentEntry(t *testing.T) {
+	const iterations = 30
+	for iteration := 0; iteration < iterations; iteration++ {
+		store := newTestMarkdownStore(t)
+		entry := Entry{
+			ID:        fmt.Sprintf("concurrent-update-%d", iteration),
+			Timestamp: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC),
+			Message:   "original message",
+		}
+		if _, err := store.CreateEntry(entry); err != nil {
+			t.Fatalf("iteration %d: failed to create entry: %v", iteration, err)
+		}
+
+		updates := []Entry{entry, entry}
+		updates[0].Timestamp = entry.Timestamp.Add(24 * time.Hour)
+		updates[0].Message = "first concurrent update"
+		updates[1].Timestamp = entry.Timestamp.Add(48 * time.Hour)
+		updates[1].Message = "second concurrent update"
+		start := make(chan struct{})
+		errs := make(chan error, len(updates))
+		var wg sync.WaitGroup
+		for _, update := range updates {
+			wg.Add(1)
+			go func(update Entry) {
+				defer wg.Done()
+				<-start
+				errs <- store.UpdateEntry(update)
+			}(update)
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("iteration %d: concurrent update failed: %v", iteration, err)
+			}
+		}
+
+		paths := markdownEntryFiles(t, store, entry.ID)
+		if len(paths) != 1 {
+			t.Fatalf("iteration %d: expected one file for ID, got %d: %v", iteration, len(paths), paths)
+		}
+		stored, err := store.GetEntry(entry.ID)
+		if err != nil {
+			t.Fatalf("iteration %d: failed to get current entry: %v", iteration, err)
+		}
+		if stored.Message != updates[0].Message && stored.Message != updates[1].Message {
+			t.Errorf("iteration %d: stored message %q does not match either successful update", iteration, stored.Message)
+		}
+	}
+}
+
+func TestMarkdownConcurrentUpdateDeleteHasConsistentOutcome(t *testing.T) {
+	const iterations = 30
+	for iteration := 0; iteration < iterations; iteration++ {
+		store := newTestMarkdownStore(t)
+		entry := Entry{
+			ID:        fmt.Sprintf("concurrent-update-delete-%d", iteration),
+			Timestamp: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC),
+			Message:   "original message",
+		}
+		if _, err := store.CreateEntry(entry); err != nil {
+			t.Fatalf("iteration %d: failed to create entry: %v", iteration, err)
+		}
+		updated := entry
+		updated.Timestamp = entry.Timestamp.Add(24 * time.Hour)
+		updated.Message = "concurrent update"
+
+		start := make(chan struct{})
+		updateResult := make(chan error, 1)
+		deleteResult := make(chan error, 1)
+		go func() {
+			<-start
+			updateResult <- store.UpdateEntry(updated)
+		}()
+		go func() {
+			<-start
+			deleteResult <- store.DeleteEntry(entry.ID)
+		}()
+		close(start)
+		updateErr := <-updateResult
+		deleteErr := <-deleteResult
+		paths := markdownEntryFiles(t, store, entry.ID)
+
+		if len(paths) > 1 {
+			t.Fatalf("iteration %d: expected at most one file for ID, got %d: %v", iteration, len(paths), paths)
+		}
+		if deleteErr == nil && len(paths) != 0 {
+			t.Fatalf("iteration %d: delete reported success but entry remains at %v (update error: %v)", iteration, paths, updateErr)
+		}
+		if len(paths) == 1 {
+			stored, err := parseEntryFile(paths[0])
+			if err != nil {
+				t.Fatalf("iteration %d: failed to parse surviving entry: %v", iteration, err)
+			}
+			if updateErr != nil || stored.Message != updated.Message {
+				t.Fatalf("iteration %d: survivor is inconsistent with update result: update error=%v, message=%q", iteration, updateErr, stored.Message)
+			}
+		}
+	}
+}
+
 func TestMarkdownConcurrentEntryCreation(t *testing.T) {
 	store := newTestMarkdownStore(t)
 	defer store.Close()
@@ -895,6 +1441,67 @@ func TestMarkdownConcurrentMixedOperations(t *testing.T) {
 	}
 }
 
+func TestMarkdownConcurrentCRUDAndLastModified(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	const iterations = 30
+	ready := make(chan struct{})
+	start := make(chan struct{})
+	done := make(chan struct{})
+	errs := make(chan error, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		close(ready)
+		<-start
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				_ = store.LastModified()
+			}
+		}
+	}()
+
+	<-ready
+	go func() {
+		defer wg.Done()
+		defer close(done)
+		close(start)
+		for i := 0; i < iterations; i++ {
+			entry := Entry{
+				Timestamp: time.Now(),
+				Message:   fmt.Sprintf("entry %d", i),
+			}
+			id, err := store.CreateEntry(entry)
+			if err != nil {
+				errs <- fmt.Errorf("create entry %d: %w", i, err)
+				return
+			}
+			entry.ID = id
+			entry.Message = fmt.Sprintf("updated entry %d", i)
+			if err := store.UpdateEntry(entry); err != nil {
+				errs <- fmt.Errorf("update entry %d: %w", i, err)
+				return
+			}
+			if err := store.DeleteEntry(id); err != nil {
+				errs <- fmt.Errorf("delete entry %d: %w", i, err)
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
 // --- Frontmatter Parsing Tests ---
 
 func TestMarkdownEntryFrontmatterRoundTrip(t *testing.T) {
@@ -934,16 +1541,70 @@ func TestMarkdownEntryFrontmatterRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarkdownNonUTCTimestampStaysInOriginalDateDirectory(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	defer store.Close()
+
+	location := time.FixedZone("UTC+14", 14*60*60)
+	originalTimestamp := time.Date(2026, 7, 10, 0, 30, 0, 0, location)
+	entry := Entry{
+		ID:        "offset-entry",
+		Timestamp: originalTimestamp,
+		Message:   "before update",
+	}
+	if _, err := store.CreateEntry(entry); err != nil {
+		t.Fatalf("failed to create entry: %v", err)
+	}
+	originalDir := store.entryDirPath(originalTimestamp)
+
+	retrieved, err := store.GetEntry(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to get entry: %v", err)
+	}
+	if !retrieved.Timestamp.Equal(originalTimestamp) {
+		t.Errorf("timestamp instant changed: want %v, got %v", originalTimestamp, retrieved.Timestamp)
+	}
+	_, offset := retrieved.Timestamp.Zone()
+	if offset != 14*60*60 {
+		t.Errorf("timestamp offset changed: want %d, got %d", 14*60*60, offset)
+	}
+
+	retrieved.Message = "after update"
+	if err := store.UpdateEntry(*retrieved); err != nil {
+		t.Fatalf("failed to update entry: %v", err)
+	}
+	path, err := store.findEntryFile(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to find updated entry: %v", err)
+	}
+	if filepath.Dir(path) != originalDir {
+		t.Errorf("entry moved from original date directory: want %q, got %q", originalDir, filepath.Dir(path))
+	}
+
+	updated, err := store.GetEntry(entry.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated entry: %v", err)
+	}
+	if !updated.Timestamp.Equal(originalTimestamp) {
+		t.Errorf("updated timestamp instant changed: want %v, got %v", originalTimestamp, updated.Timestamp)
+	}
+	_, updatedOffset := updated.Timestamp.Zone()
+	if updatedOffset != 14*60*60 {
+		t.Errorf("updated timestamp offset changed: want %d, got %d", 14*60*60, updatedOffset)
+	}
+}
+
 func TestMarkdownSlugGeneration(t *testing.T) {
 	tests := []struct {
 		message  string
 		id       string
 		expected string
 	}{
-		{"Hello World", "abc12345-1234", "hello-world-abc12345.md"},
-		{"deployed app to production", "def67890-5678", "deployed-app-to-production-def67890.md"},
-		{"", "ghi11111-9012", "untitled-ghi11111.md"},
-		{"a very long message that should be truncated for the filename", "jkl22222-3456", "a-very-long-message-that-jkl22222.md"},
+		{"Hello World", "abc12345-1234", "hello-world-77d0798ff687201ed9679bd3b6ab092d700dba5c6c51d000acdc24b70da28740.md"},
+		{"deployed app to production", "def67890-5678", "deployed-app-to-production-ef2214da4bf22306d352379a3fcfd50439fcda0f2370b6f902fdeae93ff3f1ad.md"},
+		{"", "ghi11111-9012", "untitled-a58007b1e346b5583aacbea187f5cc3a2c0a5e28b0c51552a16f4e24b03710df.md"},
+		{"a very long message that should be truncated for the filename", "jkl22222-3456", "a-very-long-message-that-49947a3361a0f911fc697cd24f0bf97ec48df7808b316fae9778fb9ea340d07f.md"},
+		{"path safe", `path/unsafe\id?`, "path-safe-0aab6fca24852573daa381437e01c0fb23315f91e3464247c94a54fb691b9a52.md"},
 	}
 
 	for _, tt := range tests {

@@ -1,3 +1,5 @@
+# ABOUTME: Configures Chronicle's cross-platform release archives and publishing metadata.
+# ABOUTME: Publishes release artifacts and a Homebrew cask through GoReleaser.
 version: 2
 
 before:
@@ -33,19 +35,16 @@ release:
     owner: harperreed
     name: chronicle
 
-brews:
+homebrew_casks:
   - repository:
       owner: harperreed
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/harperreed/chronicle"
     description: "Timestamped logging tool with SQLite and optional project log files"
     license: "MIT"
-    install: |
-      bin.install "chronicle"
-    test: |
-      system "#{bin}/chronicle", "--help"
+    binaries:
+      - chronicle
 
 changelog:
   sort: asc

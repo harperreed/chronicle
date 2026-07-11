@@ -1,6 +1,9 @@
-# Chronicle Makefile
+# ABOUTME: Defines Chronicle's local build, test, install, and release commands.
+# ABOUTME: Provides the developer workflows mirrored by continuous integration.
 
-.PHONY: help build test clean install lint fmt run-mcp dev-db
+.PHONY: help build test test-coverage install clean lint fmt run-mcp dev-db release dev integration-test ci
+
+INSTALL_DIR = $(shell gobin="$$(go env GOBIN)"; if [ -n "$$gobin" ]; then printf '%s' "$$gobin"; else gopath="$$(go env GOPATH)"; printf '%s/bin' "$${gopath%%:*}"; fi)
 
 # Default target
 help:
@@ -9,7 +12,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make build      - Build the chronicle binary"
 	@echo "  make test       - Run all tests"
-	@echo "  make install    - Install chronicle to GOPATH/bin"
+	@echo "  make install    - Install chronicle to the configured Go binary directory"
 	@echo "  make clean      - Remove built binaries"
 	@echo "  make lint       - Run linter"
 	@echo "  make fmt        - Format code"
@@ -35,11 +38,11 @@ test-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report: coverage.html"
 
-# Install to GOPATH/bin
+# Install to the configured Go binary directory
 install:
 	@echo "Installing chronicle..."
 	go install .
-	@echo "✓ Installed to $(shell go env GOPATH)/bin/chronicle"
+	@echo "✓ Installed to $(INSTALL_DIR)/chronicle"
 
 # Clean built binaries
 clean:

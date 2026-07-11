@@ -3,6 +3,7 @@
 package logging
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,5 +127,62 @@ func TestWriteProjectLogMultipleEntries(t *testing.T) {
 	contentStr := string(content)
 	if !strings.Contains(contentStr, "first entry") || !strings.Contains(contentStr, "second entry") {
 		t.Errorf("log file should contain both entries: %s", contentStr)
+	}
+}
+
+func TestWriteProjectLogRejectsZeroTimestamp(t *testing.T) {
+	err := WriteProjectLog(t.TempDir(), "markdown", Entry{})
+	if err == nil {
+		t.Fatal("WriteProjectLog should reject a zero timestamp")
+	}
+	if err.Error() != "entry timestamp is zero" {
+		t.Fatalf("WriteProjectLog returned %q, want %q", err, "entry timestamp is zero")
+	}
+}
+
+func TestWriteProjectLogReturnsMkdirAllError(t *testing.T) {
+	parentFile := filepath.Join(t.TempDir(), "parent-file")
+	if err := os.WriteFile(parentFile, []byte("not a directory"), 0600); err != nil {
+		t.Fatalf("failed to create parent file: %v", err)
+	}
+
+	logDir := filepath.Join(parentFile, "logs")
+	entry := Entry{Timestamp: time.Date(2025, 11, 29, 14, 30, 0, 0, time.Local)}
+	err := WriteProjectLog(logDir, "markdown", entry)
+	if err == nil {
+		t.Fatal("WriteProjectLog should return an error when its parent path is a file")
+	}
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) || pathErr.Path != parentFile {
+		t.Fatalf("WriteProjectLog error = %v, want a path error for %q", err, parentFile)
+	}
+}
+
+func TestWriteProjectLogReturnsOpenFileError(t *testing.T) {
+	logDir := t.TempDir()
+	logFile := filepath.Join(logDir, "2025-11-29.log")
+	if err := os.Mkdir(logFile, 0755); err != nil {
+		t.Fatalf("failed to create directory at log file path: %v", err)
+	}
+
+	entry := Entry{Timestamp: time.Date(2025, 11, 29, 14, 30, 0, 0, time.Local)}
+	err := WriteProjectLog(logDir, "markdown", entry)
+	if err == nil {
+		t.Fatal("WriteProjectLog should return an error when the log file path is a directory")
+	}
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) || pathErr.Path != logFile {
+		t.Fatalf("WriteProjectLog error = %v, want a path error for %q", err, logFile)
+	}
+}
+
+func TestWriteProjectLogReturnsJSONMarshalError(t *testing.T) {
+	entry := Entry{Timestamp: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}
+	err := WriteProjectLog(t.TempDir(), "json", entry)
+	if err == nil {
+		t.Fatal("WriteProjectLog should return an error for a timestamp JSON cannot encode")
+	}
+	if !strings.Contains(err.Error(), "year outside of range") {
+		t.Fatalf("WriteProjectLog returned unexpected JSON error: %v", err)
 	}
 }

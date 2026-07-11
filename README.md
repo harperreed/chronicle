@@ -9,7 +9,7 @@ A fast, lightweight CLI tool for logging timestamped messages with metadata.
 - **Tagging** - Organize entries with multiple tags
 - **Full-text search** - Fast FTS5-powered search (SQLite backend)
 - **Project logs** - Optional per-project log files (markdown or JSON)
-- **Natural date parsing** - Use "yesterday", "last week", or ISO dates
+- **Absolute date filtering** - Use date-only ISO values or timestamps
 - **Multiple output formats** - Human-readable tables or JSON
 - **Data migration** - Convert between backends with `chronicle migrate`
 
@@ -43,7 +43,7 @@ chronicle list
 
 # Search
 chronicle search "deployment"
-chronicle search --tag work --since "last week"
+chronicle search --tag work --since 2026-01-01
 ```
 
 ## Commands
@@ -69,13 +69,15 @@ chronicle list --json          # JSON output
 ```bash
 chronicle search "keyword"                        # Full-text search
 chronicle search --tag work                       # By tag
-chronicle search --since yesterday --until today  # Date range
+chronicle search --since 2025-11-01 --until 2025-12-01  # Date range
 chronicle search "bug" --tag golang --json        # Combined with JSON
 ```
 
 **Date formats:**
-- Natural: `yesterday`, `today`, `"3 days ago"`, `"last week"`
-- ISO: `2025-11-29`, `2025-11-29T14:30:00`
+- Date-only ISO: `2025-11-29` (midnight UTC)
+- ISO timestamp: `2025-11-29T14:30:00Z`
+
+Relative phrases such as `yesterday` and `last week` are not supported.
 
 ### Export
 
@@ -130,12 +132,14 @@ Add to your Claude Desktop MCP settings (`~/Library/Application Support/Claude/c
 **Low-Level Tools:**
 - `add_entry` - Log a new entry
 - `list_entries` - Retrieve recent entries
-- `search_entries` - Search by text, tags, or dates
+- `search_entries` - Search by text or tags
 
 **High-Level Semantic Tools:**
 - `remember_this` - Proactively log important information with smart tagging
 - `what_was_i_doing` - Recall recent activities and context
 - `find_when_i` - Find when you did something specific
+
+`search_entries` accepts `since` and `until`, but currently ignores them. `what_was_i_doing` likewise accepts but ignores `timeframe` and returns up to 20 recent entries. Use the CLI's `search --since/--until` flags when date filtering is required.
 
 ### Available Resources
 
@@ -159,7 +163,7 @@ log_format = "markdown"  # or "json"
 ```
 
 When you run `chronicle add` from anywhere in the project, it will:
-1. Store the entry in the global database
+1. Store the entry in the configured global storage
 2. Append to `logs/YYYY-MM-DD.log` in the project root
 
 Example markdown log entry:
@@ -174,7 +178,7 @@ Example markdown log entry:
 
 ### Global Config
 
-Optional: `~/.config/chronicle/config.json`
+Optional: `$XDG_CONFIG_HOME/chronicle/config.json` when `XDG_CONFIG_HOME` is set; otherwise `~/.config/chronicle/config.json`.
 
 ```json
 {
@@ -184,7 +188,7 @@ Optional: `~/.config/chronicle/config.json`
 ```
 
 - `backend` - Storage backend: `"sqlite"` or `"markdown"` (new installs default to markdown)
-- `data_dir` - Root directory for data storage (defaults to `~/.local/share/chronicle`)
+- `data_dir` - Root directory for data storage (defaults to `$XDG_DATA_HOME/chronicle` when set; otherwise `~/.local/share/chronicle`)
 
 Run `chronicle setup` to configure interactively.
 
@@ -192,7 +196,7 @@ Run `chronicle setup` to configure interactively.
 
 **SQLite** stores all entries in `<data_dir>/chronicle.db` with FTS5 full-text search.
 
-**Markdown** stores each entry as a separate markdown file with YAML frontmatter, organized by date: `<data_dir>/YYYY/MM/DD/<slug>-<id>.md`.
+**Markdown** stores each entry as a separate markdown file with YAML frontmatter, organized by date: `<data_dir>/YYYY/MM/DD/<slug>-<id-digest>.md`.
 
 ## Database Schema (SQLite backend)
 

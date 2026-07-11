@@ -31,7 +31,7 @@ func (s *Server) registerResources() {
 	tagsResource := &mcp.Resource{
 		URI:         "chronicle://tags",
 		Name:        "Tags",
-		Description: "All tags sorted by frequency with usage counts",
+		Description: "Tag usage counts keyed by tag",
 		MIMEType:    "application/json",
 	}
 	s.mcpServer.AddResource(tagsResource, s.handleTags)
@@ -40,7 +40,7 @@ func (s *Server) registerResources() {
 	todayResource := &mcp.Resource{
 		URI:         "chronicle://today-summary",
 		Name:        "Today Summary",
-		Description: "All entries from today grouped by tags",
+		Description: "Today's entries as timestamped message bullets",
 		MIMEType:    "text/markdown",
 	}
 	s.mcpServer.AddResource(todayResource, s.handleTodaySummary)
@@ -49,7 +49,7 @@ func (s *Server) registerResources() {
 	projectResource := &mcp.Resource{
 		URI:         "chronicle://project-context",
 		Name:        "Project Context",
-		Description: "Current directory's chronicle config and recent project-specific logs",
+		Description: "Current directory's project root and .chronicle configuration",
 		MIMEType:    "application/json",
 	}
 	s.mcpServer.AddResource(projectResource, s.handleProjectContext)
@@ -119,9 +119,11 @@ func (s *Server) handleTodaySummary(ctx context.Context, req *mcp.ReadResourceRe
 	// Get entries from today
 	now := time.Now()
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	endOfDay := startOfDay.AddDate(0, 0, 1).Add(-time.Nanosecond)
 
 	filter := &storage.SearchFilter{
 		Since: &startOfDay,
+		Until: &endOfDay,
 	}
 
 	entries, err := s.store.SearchEntries(filter, 0) // 0 = no limit
@@ -136,9 +138,9 @@ func (s *Server) handleTodaySummary(ctx context.Context, req *mcp.ReadResourceRe
 		summary.WriteString("No entries logged today yet.\n")
 	} else {
 		for _, entry := range entries {
-			summary.WriteString(fmt.Sprintf("- **%s**: %s\n",
+			fmt.Fprintf(&summary, "- **%s**: %s\n",
 				entry.Timestamp.Format("15:04:05"),
-				entry.Message))
+				entry.Message)
 		}
 	}
 
@@ -183,7 +185,9 @@ func (s *Server) handleProjectContext(ctx context.Context, req *mcp.ReadResource
 
 		chroniclePath := filepath.Join(projectRoot, ".chronicle")
 		cfg, err := config.LoadProjectConfig(chroniclePath)
-		if err == nil {
+		if err != nil {
+			contextData.Message = fmt.Sprintf("Failed to load .chronicle project configuration: %v", err)
+		} else {
 			contextData.Config = cfg
 			contextData.Message = "Project-specific chronicle configuration found"
 		}

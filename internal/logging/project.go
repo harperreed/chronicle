@@ -71,14 +71,14 @@ func formatMarkdown(entry Entry) string {
 	var sb strings.Builder
 
 	timeStr := entry.Timestamp.Format("15:04:05")
-	sb.WriteString(fmt.Sprintf("## %s - %s\n", timeStr, entry.Message))
+	fmt.Fprintf(&sb, "## %s - %s\n", timeStr, entry.Message)
 
 	if len(entry.Tags) > 0 {
-		sb.WriteString(fmt.Sprintf("- **Tags**: %s\n", strings.Join(entry.Tags, ", ")))
+		fmt.Fprintf(&sb, "- **Tags**: %s\n", strings.Join(entry.Tags, ", "))
 	}
 
-	sb.WriteString(fmt.Sprintf("- **User**: %s@%s\n", entry.Username, entry.Hostname))
-	sb.WriteString(fmt.Sprintf("- **Directory**: %s\n", entry.WorkingDirectory))
+	fmt.Fprintf(&sb, "- **User**: %s@%s\n", entry.Username, entry.Hostname)
+	fmt.Fprintf(&sb, "- **Directory**: %s\n", entry.WorkingDirectory)
 	sb.WriteString("\n")
 
 	return sb.String()

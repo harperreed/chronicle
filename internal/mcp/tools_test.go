@@ -3,8 +3,43 @@
 package mcp
 
 import (
+	"context"
+	"strings"
 	"testing"
+
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestListEntriesDescriptionPromisesOnlyRecentActivity(t *testing.T) {
+	impl := &gomcp.Implementation{
+		Name:    "chronicle-test",
+		Version: "0.0.0",
+	}
+	mcpServer := gomcp.NewServer(impl, nil)
+	server := &Server{mcpServer: mcpServer}
+	server.registerTools()
+	clientSession := connectTestClient(t, mcpServer)
+
+	result, err := clientSession.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("failed to list tools: %v", err)
+	}
+
+	for _, tool := range result.Tools {
+		if tool.Name != "list_entries" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "what did I do recently") {
+			t.Errorf("list_entries description does not describe recent activity: %q", tool.Description)
+		}
+		if strings.Contains(tool.Description, "today") {
+			t.Errorf("list_entries description promises unsupported date filtering: %q", tool.Description)
+		}
+		return
+	}
+
+	t.Fatal("list_entries tool was not registered")
+}
 
 func TestSuggestTags(t *testing.T) {
 	tests := []struct {

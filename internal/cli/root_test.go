@@ -5,9 +5,165 @@ package cli
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
+
+func resetGeneratedCommandsForTest(t *testing.T) {
+	t.Helper()
+
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == cobra.ShellCompRequestCmd {
+			rootCmd.RemoveCommand(cmd)
+		}
+	}
+	rootCmd.SetHelpCommand(nil)
+
+	t.Cleanup(func() {
+		for _, cmd := range rootCmd.Commands() {
+			if cmd.Name() == cobra.ShellCompRequestCmd {
+				rootCmd.RemoveCommand(cmd)
+			}
+		}
+		rootCmd.InitDefaultHelpCmd()
+		rootCmd.InitDefaultCompletionCmd()
+		rootCmd.SetArgs(nil)
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+	})
+}
+
+func TestExecutePreservesHiddenCompletionRequests(t *testing.T) {
+	tests := []struct {
+		name            string
+		request         string
+		wantCompletion  string
+		rejectSubstring string
+	}{
+		{
+			name:           "completion with descriptions",
+			request:        cobra.ShellCompRequestCmd,
+			wantCompletion: "add\tAdd a log entry",
+		},
+		{
+			name:            "completion without descriptions",
+			request:         cobra.ShellCompNoDescRequestCmd,
+			wantCompletion:  "add\n",
+			rejectSubstring: "add\t",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, cleanup := testSetup(t)
+			defer cleanup()
+			resetGeneratedCommandsForTest(t)
+
+			originalArgs := os.Args
+			defer func() { os.Args = originalArgs }()
+			os.Args = []string{"chronicle", tt.request, "a"}
+			rootCmd.SetArgs(nil)
+
+			var output bytes.Buffer
+			rootCmd.SetOut(&output)
+			rootCmd.SetErr(&output)
+
+			if err := Execute(); err != nil {
+				t.Fatalf("expected %s to succeed, got: %v", tt.request, err)
+			}
+			if !strings.Contains(output.String(), tt.wantCompletion) {
+				t.Fatalf("expected completion %q, got: %q", tt.wantCompletion, output.String())
+			}
+			if !strings.Contains(output.String(), "\n:4\n") {
+				t.Fatalf("expected no-file-completion directive, got: %q", output.String())
+			}
+			if tt.rejectSubstring != "" && strings.Contains(output.String(), tt.rejectSubstring) {
+				t.Fatalf("did not expect %q in output: %q", tt.rejectSubstring, output.String())
+			}
+
+			dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
+			if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+				t.Fatalf("expected completion request not to create storage, stat error: %v", err)
+			}
+		})
+	}
+}
+
+func TestExecuteInitializesGeneratedCommandsBeforeShorthand(t *testing.T) {
+	t.Run("bare help does not create an entry", func(t *testing.T) {
+		tmpDir, cleanup := testSetup(t)
+		defer cleanup()
+		resetGeneratedCommandsForTest(t)
+
+		originalArgs := os.Args
+		defer func() { os.Args = originalArgs }()
+		os.Args = []string{"chronicle", "help"}
+		rootCmd.SetArgs(nil)
+
+		var stdout bytes.Buffer
+		rootCmd.SetOut(&stdout)
+		rootCmd.SetErr(&stdout)
+
+		if err := Execute(); err != nil {
+			t.Fatalf("expected bare help to succeed, got: %v", err)
+		}
+		if !strings.Contains(stdout.String(), "Available Commands") {
+			t.Fatalf("expected help output, got: %q", stdout.String())
+		}
+
+		dbPath := filepath.Join(tmpDir, "chronicle", "chronicle.db")
+		if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+			t.Fatalf("expected help not to create storage, stat error: %v", err)
+		}
+	})
+
+	t.Run("help for a command succeeds", func(t *testing.T) {
+		_, cleanup := testSetup(t)
+		defer cleanup()
+		resetGeneratedCommandsForTest(t)
+
+		originalArgs := os.Args
+		defer func() { os.Args = originalArgs }()
+		os.Args = []string{"chronicle", "help", "add"}
+		rootCmd.SetArgs(nil)
+
+		var stdout bytes.Buffer
+		rootCmd.SetOut(&stdout)
+		rootCmd.SetErr(&stdout)
+
+		if err := Execute(); err != nil {
+			t.Fatalf("expected command help to succeed, got: %v", err)
+		}
+		if !strings.Contains(stdout.String(), "chronicle add [message]") {
+			t.Fatalf("expected add help output, got: %q", stdout.String())
+		}
+	})
+
+	t.Run("fish completion generation succeeds", func(t *testing.T) {
+		_, cleanup := testSetup(t)
+		defer cleanup()
+		resetGeneratedCommandsForTest(t)
+
+		originalArgs := os.Args
+		defer func() { os.Args = originalArgs }()
+		os.Args = []string{"chronicle", "completion", "fish"}
+		rootCmd.SetArgs(nil)
+
+		var stdout bytes.Buffer
+		rootCmd.SetOut(&stdout)
+		rootCmd.SetErr(&stdout)
+
+		if err := Execute(); err != nil {
+			t.Fatalf("expected fish completion generation to succeed, got: %v", err)
+		}
+		if !strings.Contains(stdout.String(), "complete -c chronicle") {
+			t.Fatalf("expected fish completion script, got: %q", stdout.String())
+		}
+	})
+}
 
 func TestExecute(t *testing.T) {
 	t.Run("runs without error", func(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,12 +20,17 @@ import (
 
 // SqliteStore provides SQLite storage for chronicle entries.
 type SqliteStore struct {
-	db           *sql.DB
-	lastModified time.Time
+	db             *sql.DB
+	lastModifiedMu sync.RWMutex
+	lastModified   time.Time
 }
 
 // Compile-time check that SqliteStore implements Storage.
 var _ Storage = (*SqliteStore)(nil)
+
+var sqliteMigrationMu sync.Mutex
+
+const sqliteTimestampFormat = "2006-01-02 15:04:05.999999999 -0700 MST"
 
 // Entry represents a chronicle log entry.
 type Entry struct {
@@ -61,26 +67,29 @@ func NewSqliteStore(dbPath string) (*SqliteStore, error) {
 	// Create directory if needed (unless in-memory)
 	if dbPath != ":memory:" {
 		dir := filepath.Dir(dbPath)
+		// #nosec G703 -- dbPath is the explicit caller-selected database destination, not a child path beneath a restricted root.
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			return nil, fmt.Errorf("create data directory: %w", err)
 		}
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteDataSourceName(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+	sqliteMigrationMu.Lock()
+	defer sqliteMigrationMu.Unlock()
 
 	// Enable WAL mode and foreign keys
 	pragmas := []string{
+		"PRAGMA busy_timeout=5000",
 		"PRAGMA journal_mode=WAL",
 		"PRAGMA foreign_keys=ON",
-		"PRAGMA busy_timeout=5000",
 	}
 	for _, pragma := range pragmas {
 		if _, err := db.Exec(pragma); err != nil {
 			_ = db.Close()
-			return nil, fmt.Errorf("set pragma: %w", err)
+			return nil, fmt.Errorf("set %q: %w", pragma, err)
 		}
 	}
 
@@ -97,6 +106,14 @@ func NewSqliteStore(dbPath string) (*SqliteStore, error) {
 	return store, nil
 }
 
+func sqliteDataSourceName(dbPath string) string {
+	separator := "?"
+	if strings.Contains(dbPath, "?") {
+		separator = "&"
+	}
+	return dbPath + separator + "_txlock=immediate&_pragma=busy_timeout(5000)"
+}
+
 // migrate runs database migrations.
 func (s *SqliteStore) migrate() error {
 	schema := `
@@ -104,6 +121,8 @@ func (s *SqliteStore) migrate() error {
 		rowid INTEGER PRIMARY KEY AUTOINCREMENT,
 		id TEXT UNIQUE NOT NULL,
 		timestamp DATETIME NOT NULL,
+		timestamp_unix_seconds INTEGER,
+		timestamp_nanosecond INTEGER,
 		message TEXT NOT NULL,
 		hostname TEXT,
 		username TEXT,
@@ -131,14 +150,168 @@ func (s *SqliteStore) migrate() error {
 		INSERT INTO entries_fts(entries_fts, rowid, message, tags) VALUES('delete', old.rowid, old.message, old.tags);
 	END;
 
-	CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
+	CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE OF message, tags ON entries BEGIN
 		INSERT INTO entries_fts(entries_fts, rowid, message, tags) VALUES('delete', old.rowid, old.message, old.tags);
 		INSERT INTO entries_fts(rowid, message, tags) VALUES (new.rowid, new.message, new.tags);
 	END;
 	`
 
-	_, err := s.db.Exec(schema)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin schema migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(schema); err != nil {
+		return fmt.Errorf("apply schema: %w", err)
+	}
+
+	triggerNeedsScope, err := sqliteTriggerNeedsTimestampScope(tx)
+	if err != nil {
+		return fmt.Errorf("inspect entries update trigger: %w", err)
+	}
+	if triggerNeedsScope {
+		if _, err := tx.Exec(`
+			DROP TRIGGER entries_au;
+			CREATE TRIGGER entries_au AFTER UPDATE OF message, tags ON entries BEGIN
+				INSERT INTO entries_fts(entries_fts, rowid, message, tags) VALUES('delete', old.rowid, old.message, old.tags);
+				INSERT INTO entries_fts(rowid, message, tags) VALUES (new.rowid, new.message, new.tags);
+			END;
+		`); err != nil {
+			return fmt.Errorf("scope entries update trigger: %w", err)
+		}
+	}
+
+	for _, column := range []string{"timestamp_unix_seconds", "timestamp_nanosecond"} {
+		hasColumn, err := sqliteColumnExists(tx, "entries", column)
+		if err != nil {
+			return fmt.Errorf("inspect entries schema for %s: %w", column, err)
+		}
+		if !hasColumn {
+			if _, err := tx.Exec("ALTER TABLE entries ADD COLUMN " + column + " INTEGER"); err != nil {
+				return fmt.Errorf("add timestamp instant key %s: %w", column, err)
+			}
+		}
+	}
+
+	if err := backfillTimestampInstantKeys(tx); err != nil {
+		return err
+	}
+	hasInstantIndex, err := sqliteSchemaObjectExists(tx, "index", "idx_entries_timestamp_instant")
+	if err != nil {
+		return fmt.Errorf("inspect timestamp instant index: %w", err)
+	}
+	if !hasInstantIndex {
+		if _, err := tx.Exec(`
+			CREATE INDEX idx_entries_timestamp_instant
+			ON entries(timestamp_unix_seconds DESC, timestamp_nanosecond DESC)
+		`); err != nil {
+			return fmt.Errorf("index timestamp instant key: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema migration: %w", err)
+	}
+	return nil
+}
+
+func sqliteTriggerNeedsTimestampScope(tx *sql.Tx) (bool, error) {
+	var definition string
+	err := tx.QueryRow(`
+		SELECT sql
+		FROM sqlite_master
+		WHERE type = 'trigger' AND name = 'entries_au'
+	`).Scan(&definition)
+	if err != nil {
+		return false, err
+	}
+	return !strings.Contains(definition, "AFTER UPDATE OF message, tags"), nil
+}
+
+func sqliteSchemaObjectExists(tx *sql.Tx, objectType, name string) (bool, error) {
+	var exists int
+	err := tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?
+		)
+	`, objectType, name).Scan(&exists)
+	return exists != 0, err
+}
+
+func sqliteColumnExists(tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func backfillTimestampInstantKeys(tx *sql.Tx) error {
+	rows, err := tx.Query(`
+		SELECT rowid, timestamp
+		FROM entries
+		WHERE timestamp_unix_seconds IS NULL OR timestamp_nanosecond IS NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("query timestamp instant key backfill: %w", err)
+	}
+
+	type timestampBackfill struct {
+		rowID       int64
+		unixSeconds int64
+		nanosecond  int
+	}
+	var backfills []timestampBackfill
+	for rows.Next() {
+		var rowID int64
+		var rawTimestamp string
+		if err := rows.Scan(&rowID, &rawTimestamp); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan timestamp instant key backfill: %w", err)
+		}
+		timestamp, err := parseTimestamp(rawTimestamp)
+		if err == nil {
+			backfills = append(backfills, timestampBackfill{
+				rowID:       rowID,
+				unixSeconds: timestamp.Unix(),
+				nanosecond:  timestamp.Nanosecond(),
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate timestamp instant key backfill: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close timestamp instant key backfill: %w", err)
+	}
+
+	for _, backfill := range backfills {
+		if _, err := tx.Exec(
+			"UPDATE entries SET timestamp_unix_seconds = ?, timestamp_nanosecond = ? WHERE rowid = ?",
+			backfill.unixSeconds,
+			backfill.nanosecond,
+			backfill.rowID,
+		); err != nil {
+			return fmt.Errorf("backfill timestamp instant key for row %d: %w", backfill.rowID, err)
+		}
+	}
+	return nil
 }
 
 // Close closes the database connection.
@@ -162,28 +335,24 @@ func (s *SqliteStore) CreateEntry(entry Entry) (string, error) {
 	}
 
 	_, err = s.db.Exec(`
-		INSERT INTO entries (id, timestamp, message, hostname, username, working_directory, tags)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, entry.ID, entry.Timestamp, entry.Message, entry.Hostname, entry.Username, entry.WorkingDirectory, string(tagsJSON))
+		INSERT INTO entries (id, timestamp, timestamp_unix_seconds, timestamp_nanosecond, message, hostname, username, working_directory, tags)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, entry.ID, formatTimestamp(entry.Timestamp), entry.Timestamp.Unix(), entry.Timestamp.Nanosecond(), entry.Message, entry.Hostname, entry.Username, entry.WorkingDirectory, string(tagsJSON))
 
 	if err != nil {
 		return "", fmt.Errorf("insert entry: %w", err)
 	}
 
-	s.lastModified = time.Now()
+	s.markModified()
 	return entry.ID, nil
 }
 
 // GetEntry retrieves an entry by ID.
 func (s *SqliteStore) GetEntry(id string) (*Entry, error) {
-	var entry Entry
-	var tagsJSON string
-	var timestamp string
-
-	err := s.db.QueryRow(`
+	entry, timestamp, tagsJSON, err := scanEntry(s.db.QueryRow(`
 		SELECT id, timestamp, message, hostname, username, working_directory, tags
 		FROM entries WHERE id = ?
-	`, id).Scan(&entry.ID, &timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory, &tagsJSON)
+	`, id))
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("entry not found: %s", id)
@@ -221,9 +390,9 @@ func (s *SqliteStore) UpdateEntry(entry Entry) error {
 
 	result, err := s.db.Exec(`
 		UPDATE entries
-		SET timestamp = ?, message = ?, hostname = ?, username = ?, working_directory = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+		SET timestamp = ?, timestamp_unix_seconds = ?, timestamp_nanosecond = ?, message = ?, hostname = ?, username = ?, working_directory = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, entry.Timestamp, entry.Message, entry.Hostname, entry.Username, entry.WorkingDirectory, string(tagsJSON), entry.ID)
+	`, formatTimestamp(entry.Timestamp), entry.Timestamp.Unix(), entry.Timestamp.Nanosecond(), entry.Message, entry.Hostname, entry.Username, entry.WorkingDirectory, string(tagsJSON), entry.ID)
 
 	if err != nil {
 		return fmt.Errorf("update entry: %w", err)
@@ -237,7 +406,7 @@ func (s *SqliteStore) UpdateEntry(entry Entry) error {
 		return fmt.Errorf("entry not found: %s", entry.ID)
 	}
 
-	s.lastModified = time.Now()
+	s.markModified()
 	return nil
 }
 
@@ -256,7 +425,7 @@ func (s *SqliteStore) DeleteEntry(id string) error {
 		return fmt.Errorf("entry not found: %s", id)
 	}
 
-	s.lastModified = time.Now()
+	s.markModified()
 	return nil
 }
 
@@ -295,50 +464,34 @@ func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, e
 	// Date range filters
 	if filter != nil {
 		if filter.Since != nil {
-			if filter.Text != "" {
-				conditions = append(conditions, "e.timestamp >= ?")
-			} else {
-				conditions = append(conditions, "timestamp >= ?")
-			}
-			args = append(args, *filter.Since)
+			conditions = append(conditions, "(e.timestamp_unix_seconds IS NOT NULL AND e.timestamp_nanosecond IS NOT NULL AND (e.timestamp_unix_seconds > ? OR (e.timestamp_unix_seconds = ? AND e.timestamp_nanosecond >= ?)))")
+			args = append(args, filter.Since.Unix(), filter.Since.Unix(), filter.Since.Nanosecond())
 		}
 		if filter.Until != nil {
-			if filter.Text != "" {
-				conditions = append(conditions, "e.timestamp <= ?")
-			} else {
-				conditions = append(conditions, "timestamp <= ?")
-			}
-			args = append(args, *filter.Until)
+			conditions = append(conditions, "(e.timestamp_unix_seconds IS NOT NULL AND e.timestamp_nanosecond IS NOT NULL AND (e.timestamp_unix_seconds < ? OR (e.timestamp_unix_seconds = ? AND e.timestamp_nanosecond <= ?)))")
+			args = append(args, filter.Until.Unix(), filter.Until.Unix(), filter.Until.Nanosecond())
 		}
-		// Tag filter (search in JSON array)
+		// Tag filter (exact membership in the JSON array)
 		if len(filter.Tags) > 0 {
-			var tagConditions []string
+			tagConditions := make([]string, 0, len(filter.Tags))
 			for _, tag := range filter.Tags {
-				if filter.Text != "" {
-					tagConditions = append(tagConditions, "e.tags LIKE ?")
-				} else {
-					tagConditions = append(tagConditions, "tags LIKE ?")
-				}
-				args = append(args, "%\""+tag+"\"%")
+				tagConditions = append(tagConditions, "EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(e.tags) THEN CASE WHEN json_type(e.tags) = 'array' THEN e.tags ELSE '[]' END ELSE '[]' END) AS tag_value WHERE tag_value.value = ?)")
+				args = append(args, tag)
 			}
 			conditions = append(conditions, "("+strings.Join(tagConditions, " OR ")+")")
 		}
 	}
 
 	if len(conditions) > 0 {
+		conditionPrefix := " WHERE "
 		if filter != nil && filter.Text != "" {
-			query += " AND " + strings.Join(conditions, " AND ")
-		} else {
-			query += " WHERE " + strings.Join(conditions, " AND ")
+			conditionPrefix = " AND "
 		}
+		query = strings.Join([]string{query, conditionPrefix, strings.Join(conditions, " AND ")}, "")
 	}
 
 	// Order and limit
-	if filter != nil && filter.Text != "" {
-		query += " ORDER BY e.timestamp DESC"
-	} else {
-		query += " ORDER BY timestamp DESC"
-	}
+	query += " ORDER BY (e.timestamp_unix_seconds IS NULL OR e.timestamp_nanosecond IS NULL), e.timestamp_unix_seconds DESC, e.timestamp_nanosecond DESC"
 	if limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, limit)
@@ -351,12 +504,9 @@ func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, e
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
-		var entry Entry
-		var tagsJSON string
-		var timestamp string
-
-		if err := rows.Scan(&entry.ID, &timestamp, &entry.Message, &entry.Hostname, &entry.Username, &entry.WorkingDirectory, &tagsJSON); err != nil {
-			return nil, fmt.Errorf("scan entry: %w", err)
+		entry, timestamp, tagsJSON, scanErr := scanEntry(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan entry: %w", scanErr)
 		}
 
 		// Parse timestamp
@@ -379,9 +529,50 @@ func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, e
 	return entries, rows.Err()
 }
 
+type entryScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanEntry maps nullable database metadata to the Entry zero values used by callers.
+func scanEntry(scanner entryScanner) (Entry, string, string, error) {
+	var entry Entry
+	var timestamp string
+	var hostname sql.NullString
+	var username sql.NullString
+	var workingDirectory sql.NullString
+	var tagsJSON sql.NullString
+
+	err := scanner.Scan(
+		&entry.ID,
+		&timestamp,
+		&entry.Message,
+		&hostname,
+		&username,
+		&workingDirectory,
+		&tagsJSON,
+	)
+	if err != nil {
+		return Entry{}, "", "", err
+	}
+
+	entry.Hostname = hostname.String
+	entry.Username = username.String
+	entry.WorkingDirectory = workingDirectory.String
+	return entry, timestamp, tagsJSON.String, nil
+}
+
 // LastModified returns when the database was last modified.
 func (s *SqliteStore) LastModified() time.Time {
+	s.lastModifiedMu.RLock()
+	defer s.lastModifiedMu.RUnlock()
 	return s.lastModified
+}
+
+// markModified records a successful mutation.
+func (s *SqliteStore) markModified() {
+	s.lastModifiedMu.Lock()
+	s.lastModified = time.Now()
+	s.lastModifiedMu.Unlock()
 }
 
 // Vacuum runs SQLite VACUUM to optimize the database.
@@ -396,7 +587,7 @@ func (s *SqliteStore) Reset() error {
 	if err != nil {
 		return fmt.Errorf("delete entries: %w", err)
 	}
-	s.lastModified = time.Now()
+	s.markModified()
 	return nil
 }
 
@@ -408,6 +599,7 @@ func parseTimestamp(s string) (time.Time, error) {
 		"2006-01-02T15:04:05.999999999-07:00",
 		"2006-01-02T15:04:05-07:00",
 		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05.999999999 -0700",
 		"2006-01-02T15:04:05Z",
 		"2006-01-02 15:04:05",
 	}
@@ -418,5 +610,18 @@ func parseTimestamp(s string) (time.Time, error) {
 		}
 	}
 
+	// Older SQLite driver versions appended a location name after a numeric offset.
+	legacyParts := strings.Fields(s)
+	if len(legacyParts) == 4 {
+		legacyTimestamp := strings.Join(legacyParts[:3], " ")
+		if t, err := time.Parse("2006-01-02 15:04:05.999999999 -0700", legacyTimestamp); err == nil {
+			return t, nil
+		}
+	}
+
 	return time.Time{}, fmt.Errorf("cannot parse timestamp: %s", s)
+}
+
+func formatTimestamp(timestamp time.Time) string {
+	return timestamp.Format(sqliteTimestampFormat)
 }

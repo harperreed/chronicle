@@ -25,6 +25,9 @@ Chronicle logs timestamped messages with metadata to SQLite and optional project
 }
 
 func Execute() error {
+	rootCmd.InitDefaultHelpCmd()
+	rootCmd.InitDefaultCompletionCmd(os.Args[1:]...)
+
 	// If first arg is not a known subcommand, inject "add"
 	if shouldInjectAddCommand() {
 		os.Args = append([]string{os.Args[0], "add"}, os.Args[1:]...)
@@ -40,6 +43,10 @@ func shouldInjectAddCommand() bool {
 	arg := os.Args[1]
 	// Check if it's a flag
 	if len(arg) == 0 || arg[0] == '-' {
+		return false
+	}
+	// Cobra creates its hidden completion command during command execution.
+	if arg == cobra.ShellCompRequestCmd || arg == cobra.ShellCompNoDescRequestCmd {
 		return false
 	}
 

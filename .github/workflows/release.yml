@@ -1,3 +1,5 @@
+# ABOUTME: Builds Chronicle release binaries for supported macOS and Linux architectures.
+# ABOUTME: Publishes tagged archives and updates the project Homebrew tap.
 name: Release
 
 on:
@@ -6,8 +8,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   build-darwin:
@@ -20,9 +21,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          go-version-file: go.mod
           cache: true
 
       - name: Build darwin/amd64
@@ -58,9 +59,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          go-version-file: go.mod
           cache: true
 
       - name: Build linux/amd64
@@ -92,6 +93,8 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     needs: [build-darwin, build-linux]
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -110,67 +113,84 @@ jobs:
 
       - name: Create archives
         run: |
-          cd dist
+          if ! cd dist; then
+            exit 1
+          fi
           for bin in chronicle-*; do
             chmod +x "$bin"
             tar -czvf "${bin}.tar.gz" "$bin"
           done
           ls -la
 
+      - name: Validate release inputs
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          : "${HOMEBREW_TAP_TOKEN:?HOMEBREW_TAP_TOKEN is required}"
+          : "${TAG_NAME:?TAG_NAME is required}"
+          CORE_NUMBER='(0|[1-9][0-9]*)'
+          PRERELEASE_IDENTIFIER='(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+          BUILD_IDENTIFIER='[0-9A-Za-z-]+'
+          SEMVER_PATTERN="^v${CORE_NUMBER}\.${CORE_NUMBER}\.${CORE_NUMBER}(-${PRERELEASE_IDENTIFIER}(\.${PRERELEASE_IDENTIFIER})*)?(\+${BUILD_IDENTIFIER}(\.${BUILD_IDENTIFIER})*)?$"
+          if [[ ! "$TAG_NAME" =~ $SEMVER_PATTERN ]]; then
+            echo "Invalid release tag: $TAG_NAME" >&2
+            exit 1
+          fi
+
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ github.ref_name }}" \
+          gh release create "$TAG_NAME" \
+            --title "Release $TAG_NAME" \
             --generate-notes \
             dist/*.tar.gz
 
       - name: Update Homebrew Tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          # Calculate SHA256 for darwin arm64 (primary for Homebrew)
-          SHA256=$(sha256sum dist/chronicle-darwin-arm64.tar.gz | cut -d' ' -f1)
-          VERSION=${{ github.ref_name }}
-          VERSION=${VERSION#v}
+          : "${HOMEBREW_TAP_TOKEN:?HOMEBREW_TAP_TOKEN is required}"
+          : "${TAG_NAME:?TAG_NAME is required}"
+
+          VERSION=${TAG_NAME#v}
+          ARM_SHA256=$(sha256sum dist/chronicle-darwin-arm64.tar.gz | cut -d' ' -f1)
+          INTEL_SHA256=$(sha256sum dist/chronicle-darwin-amd64.tar.gz | cut -d' ' -f1)
 
           echo "Version: $VERSION"
-          echo "SHA256: $SHA256"
+          echo "ARM SHA256: $ARM_SHA256"
+          echo "Intel SHA256: $INTEL_SHA256"
 
-          # Clone tap repo and update formula
-          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/harperreed/homebrew-tap.git tap
-          cd tap
+          export GH_TOKEN="$HOMEBREW_TAP_TOKEN"
+          gh auth setup-git
+          gh repo clone harperreed/homebrew-tap tap
+          if ! cd tap; then
+            exit 1
+          fi
+          mkdir -p Casks
 
-          cat > Formula/chronicle.rb << EOF
-          class Chronicle < Formula
+          cat > Casks/chronicle.rb << EOF
+          cask "chronicle" do
+            arch arm: "arm64", intel: "amd64"
+
+            version "$VERSION"
+            sha256 arm:   "$ARM_SHA256",
+                   intel: "$INTEL_SHA256"
+
+            url "https://github.com/harperreed/chronicle/releases/download/v#{version}/chronicle-darwin-#{arch}.tar.gz"
+            name "Chronicle"
             desc "Timestamped logging tool with SQLite and optional project log files"
             homepage "https://github.com/harperreed/chronicle"
-            version "$VERSION"
-            license "MIT"
 
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/harperreed/chronicle/releases/download/v${VERSION}/chronicle-darwin-arm64.tar.gz"
-                sha256 "$SHA256"
-              else
-                url "https://github.com/harperreed/chronicle/releases/download/v${VERSION}/chronicle-darwin-amd64.tar.gz"
-                sha256 "$(sha256sum ../dist/chronicle-darwin-amd64.tar.gz | cut -d' ' -f1)"
-              end
-            end
-
-            def install
-              bin.install Dir["chronicle-*"].first => "chronicle"
-            end
-
-            test do
-              system "#{bin}/chronicle", "--help"
-            end
+            binary "chronicle-darwin-#{arch}", target: "chronicle"
           end
           EOF
 
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add Formula/chronicle.rb
-          git commit -m "Update chronicle to $VERSION" || echo "No changes to commit"
-          git push || echo "Push failed - may need manual update"
+          git add Casks/chronicle.rb
+          git commit -m "Update chronicle to $VERSION"
+          git push
