@@ -16,6 +16,106 @@ import (
 	"time"
 )
 
+func TestSqliteStartupWaitsForConcurrentMigration(t *testing.T) {
+	const childEnv = "CHRONICLE_SQLITE_LOCK_WAIT_CHILD"
+	if os.Getenv(childEnv) == "1" {
+		marker := os.Getenv("CHRONICLE_SQLITE_LOCK_WAIT_MARKER")
+		if err := os.WriteFile(marker, []byte("started"), 0600); err != nil {
+			t.Fatalf("signal lock-wait child start: %v", err)
+		}
+
+		store, err := NewSqliteStore(os.Getenv("CHRONICLE_SQLITE_LOCK_WAIT_DB"))
+		if err != nil {
+			t.Fatalf("open database after waiting for migration lock: %v", err)
+		}
+		if err := store.Close(); err != nil {
+			t.Fatalf("close database after waiting for migration lock: %v", err)
+		}
+		return
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "lock-wait.db")
+	store, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatalf("create lock-wait database: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close lock-wait database: %v", err)
+	}
+
+	holder, err := sql.Open("sqlite", sqliteDataSourceName(dbPath))
+	if err != nil {
+		t.Fatalf("open migration lock holder: %v", err)
+	}
+	defer holder.Close()
+	holderTx, err := holder.Begin()
+	if err != nil {
+		t.Fatalf("acquire migration write lock: %v", err)
+	}
+	defer holderTx.Rollback()
+
+	marker := filepath.Join(filepath.Dir(dbPath), "child-started")
+	command := exec.Command(os.Args[0], "-test.run=^TestSqliteStartupWaitsForConcurrentMigration$")
+	command.Env = append(
+		os.Environ(),
+		childEnv+"=1",
+		"CHRONICLE_SQLITE_LOCK_WAIT_DB="+dbPath,
+		"CHRONICLE_SQLITE_LOCK_WAIT_MARKER="+marker,
+	)
+	var output strings.Builder
+	command.Stdout = &output
+	command.Stderr = &output
+	if err := command.Start(); err != nil {
+		t.Fatalf("start lock-wait child: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- command.Wait()
+	}()
+	childWaited := false
+	t.Cleanup(func() {
+		if childWaited {
+			return
+		}
+		_ = command.Process.Kill()
+		<-done
+	})
+
+	markerDeadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(markerDeadline) {
+			t.Fatalf("timed out waiting for lock-wait child marker %q", marker)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// The constructor must remain pending while a competing immediate transaction
+	// holds the migration lock beyond the minimum supported contention interval.
+	const sustainedMigrationContention = 6 * time.Second
+	select {
+	case err := <-done:
+		childWaited = true
+		t.Fatalf("lock-wait child exited while migration lock was held: %v\n%s", err, output.String())
+	case <-time.After(sustainedMigrationContention):
+	}
+
+	if err := holderTx.Commit(); err != nil {
+		t.Fatalf("release migration write lock: %v", err)
+	}
+	select {
+	case err := <-done:
+		childWaited = true
+		if err != nil {
+			t.Fatalf("lock-wait child failed after lock release: %v\n%s", err, output.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("lock-wait child did not finish after migration lock release")
+	}
+}
+
 func TestSqliteMigrationAcrossProcesses(t *testing.T) {
 	const childEnv = "CHRONICLE_SQLITE_MIGRATION_CHILD"
 	if os.Getenv(childEnv) == "1" {

@@ -25,12 +25,18 @@ repos:
       - id: go-mod-tidy
       - id: golangci-lint
         args: ['--timeout=10m', '--fix']
-      - id: go-unit-tests
-        args: ['-race', '-count=1', './...']  # -count=1 disables test caching
 
   - repo: local
     hooks:
       # go-mod-verify removed: incompatible with replace directives for local dev
+      - id: go-unit-tests
+        name: go test (race)
+        entry: go test
+        language: system
+        args: ['-race', '-count=1', '-timeout=60s', './...']
+        files: \.go$
+        types: [go]
+        pass_filenames: false
       - id: go-vet
         name: go vet
         entry: go vet

@@ -30,7 +30,10 @@ var _ Storage = (*SqliteStore)(nil)
 
 var sqliteMigrationMu sync.Mutex
 
-const sqliteTimestampFormat = "2006-01-02 15:04:05.999999999 -0700 MST"
+const (
+	sqliteBusyTimeout     = 15 * time.Second
+	sqliteTimestampFormat = "2006-01-02 15:04:05.999999999 -0700 MST"
+)
 
 // Entry represents a chronicle log entry.
 type Entry struct {
@@ -82,7 +85,7 @@ func NewSqliteStore(dbPath string) (*SqliteStore, error) {
 
 	// Enable WAL mode and foreign keys
 	pragmas := []string{
-		"PRAGMA busy_timeout=5000",
+		fmt.Sprintf("PRAGMA busy_timeout=%d", sqliteBusyTimeout.Milliseconds()),
 		"PRAGMA journal_mode=WAL",
 		"PRAGMA foreign_keys=ON",
 	}
@@ -111,7 +114,12 @@ func sqliteDataSourceName(dbPath string) string {
 	if strings.Contains(dbPath, "?") {
 		separator = "&"
 	}
-	return dbPath + separator + "_txlock=immediate&_pragma=busy_timeout(5000)"
+	return fmt.Sprintf(
+		"%s%s_txlock=immediate&_pragma=busy_timeout(%d)",
+		dbPath,
+		separator,
+		sqliteBusyTimeout.Milliseconds(),
+	)
 }
 
 // migrate runs database migrations.
