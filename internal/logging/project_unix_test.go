@@ -57,18 +57,31 @@ func TestWriteProjectLogReturnsWriteError(t *testing.T) {
 func runWriteLimitHelper(t *testing.T) {
 	signal.Ignore(syscall.SIGXFSZ)
 
-	var limit syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &limit); err != nil {
+	var originalLimit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &originalLimit); err != nil {
 		t.Fatalf("Getrlimit failed: %v", err)
 	}
+	limit := originalLimit
 	limit.Cur = 0
 	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limit); err != nil {
 		t.Fatalf("Setrlimit failed: %v", err)
 	}
+	limitRestored := false
+	t.Cleanup(func() {
+		if !limitRestored {
+			if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &originalLimit); err != nil {
+				t.Errorf("failed to restore RLIMIT_FSIZE: %v", err)
+			}
+		}
+	})
 
 	logDir := os.Getenv("CHRONICLE_LOG_WRITE_LIMIT_DIR")
 	entry := Entry{Timestamp: time.Date(2025, 11, 29, 14, 30, 0, 0, time.Local)}
 	err := WriteProjectLog(logDir, "markdown", entry)
+	if restoreErr := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &originalLimit); restoreErr != nil {
+		t.Fatalf("failed to restore RLIMIT_FSIZE: %v", restoreErr)
+	}
+	limitRestored = true
 	if !errors.Is(err, syscall.EFBIG) {
 		t.Fatalf("WriteProjectLog error = %v, want %v", err, syscall.EFBIG)
 	}
