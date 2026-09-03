@@ -11,6 +11,7 @@ A fast, lightweight CLI tool for logging timestamped messages with metadata.
 - **Project logs** - Optional per-project log files (markdown or JSON)
 - **Absolute date filtering** - Use date-only ISO values or timestamps
 - **Multiple output formats** - Human-readable tables or JSON
+- **Local web interface** - Responsive timeline with search, filters, editing, and dark mode
 - **Data migration** - Convert between backends with `chronicle migrate`
 
 ## Installation
@@ -100,6 +101,18 @@ chronicle migrate --to sqlite             # Migrate data to SQLite backend
 ```bash
 chronicle install-skill                   # Install chronicle skill for Claude Code
 ```
+
+## Web Interface
+
+Chronicle includes a responsive local web app for capturing, browsing, searching, editing, and deleting entries.
+
+```bash
+chronicle web                         # http://127.0.0.1:8080
+chronicle web --address 127.0.0.1:9000
+chronicle web --open=false            # Don't launch a browser automatically
+```
+
+The interface works with either configured storage backend and includes full-text search, tag and date filters, statistics, keyboard shortcuts, dark mode, and a mobile layout. It binds to localhost by default and rejects non-loopback Host headers so your journal is not exposed to the network. If you intentionally bind to a public interface, use `--allow-remote` and place Chronicle behind an authenticated reverse proxy.
 
 ## MCP Server
 
