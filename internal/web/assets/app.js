@@ -21,12 +21,34 @@
     clear: $('#clear-filters'), more: $('#load-more'), dialog: $('#edit-dialog'), editForm: $('#edit-form'), liveStatus: $('#live-status')
   };
 
+  // READ_TIMEOUT_MS is how long a list or stats request may take. A request can wait without end for a
+  // free connection (see the stream below), and a page that waits stays in its loading state and holds back
+  // every entry that streams in. Writes have no limit: one that timed out may still have gone through, and
+  // the page would tell the reader it failed.
+  const READ_TIMEOUT_MS = 10000;
+
+  // api sends a request and returns its JSON body. With options.timeoutMs, a request that is not
+  // answered in time, body included, fails with an error that says so.
   async function api(path, options = {}) {
-    const response = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
-    if (response.status === 204) return null;
-    const body = await response.json().catch(() => ({ error: 'Unexpected server response' }));
-    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
-    return body;
+    const { timeoutMs, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : 0;
+    try {
+      const response = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...fetchOptions, signal: controller.signal });
+      if (response.status === 204) return null;
+      const body = await response.json().catch((error) => {
+        if (controller.signal.aborted) throw error; // The time ran out while the body came in.
+        return { error: 'Unexpected server response' };
+      });
+      if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+      return body;
+    } catch (error) {
+      // Only the timer aborts a request. The browser reports that as an AbortError, which means nothing to the reader.
+      if (controller.signal.aborted) throw new Error(`The server did not answer within ${timeoutMs / 1000} seconds`);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function parseTags(value) { return [...new Set(value.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean))]; }
@@ -60,7 +82,7 @@
     if (!state.entries.length) els.entries.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
     const params = filterParams(); const query = params.toString(); params.set('limit', String(state.limit));
     try {
-      const data = await api(`/api/entries?${params}`);
+      const data = await api(`/api/entries?${params}`, { timeoutMs: READ_TIMEOUT_MS });
       if (load !== latestLoad) return;
       // After a gap, the entries that this list adds are the ones the page missed. Only a list for the
       // same filters can say so: a list for other filters differs from the old one in every entry.
@@ -125,7 +147,7 @@
 
   async function loadStats() {
     try {
-      const data = await api('/api/stats'); state.total = data.total; showTotal(); state.tags = data.tags; renderTagFilters();
+      const data = await api('/api/stats', { timeoutMs: READ_TIMEOUT_MS }); state.total = data.total; showTotal(); state.tags = data.tags; renderTagFilters();
     } catch { state.total = null; showTotal(); }
   }
   function showTotal() { els.total.textContent = state.total === null ? '—' : state.total.toLocaleString(); }
@@ -200,6 +222,12 @@
 
   // The stream delivers the entries written after it opened, filtered like the list. At most one
   // EventSource is open: connectStream closes the old one before it opens another.
+  //
+  // A page holds its stream only while it is visible. A browser allows six connections to one host, and a
+  // stream keeps one open as long as it runs, so with six pages streaming at once the requests of every
+  // page wait in line without end. A hidden page closes its stream and flags a gap. When the page is shown,
+  // it connects again and loads the list, as after a lost connection, and that list marks the entries
+  // written meanwhile as NEW.
   const STREAM_RETRY_MS = 3000;
   const LIVE_LABELS = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting' };
   let stream = null;
@@ -209,10 +237,17 @@
     if (els.liveStatus.dataset.state === name) return; // A screen reader would read the same label again.
     els.liveStatus.dataset.state = name; els.liveStatus.textContent = LIVE_LABELS[name];
   }
-  function connectStream() {
+  function closeStream() {
     clearTimeout(streamRetry);
     if (stream) stream.close();
+    stream = null;
+  }
+  function connectStream() {
+    closeStream();
     state.waiting = []; // They matched the old stream's filters, and the reload after ready covers them.
+    // A hidden page holds no stream. It flags the gap and connects when it is shown. It gets here when it
+    // loads hidden, or when a search, which is debounced, ends after the page has been hidden.
+    if (document.visibilityState !== 'visible') { interrupted = true; return; }
     const source = new EventSource(`/api/stream?${filterParams()}`);
     stream = source;
     source.addEventListener('ready', () => {
@@ -233,6 +268,13 @@
       if (source.readyState === EventSource.CLOSED) streamRetry = setTimeout(connectStream, STREAM_RETRY_MS);
     });
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      if (!stream) connectStream();
+    } else {
+      closeStream(); interrupted = true; showLiveStatus('connecting'); // The marker can't say Live without a stream.
+    }
+  });
 
   // applyFilters shows the first page for the filters as they are now and points the stream at them.
   // It reloads the stats too: the total follows the stream only while no filter is on, so after a
