@@ -38,3 +38,12 @@ type Storage interface {
 	// Close releases resources held by the storage backend.
 	Close() error
 }
+
+// Feed reports the entries that appear in a store after the feed was opened.
+type Feed interface {
+	// Poll returns the entries that appeared since the previous call, or since the feed
+	// opened, and that match the feed's filter. They come oldest first by Timestamp.
+	// It returns nil when nothing is new. Callers must not call Poll from several
+	// goroutines at once.
+	Poll() ([]Entry, error)
+}
