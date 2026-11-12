@@ -607,6 +607,10 @@ input:focus {
   background: var(--accent);
   color: var(--bg);
   font-size: 10px;
+  /* Shorter than the 16.8px time beside it, so a card is as tall with its mark as without it.
+     Otherwise the page below an expiring mark moves up by a fraction of a pixel, which adds up
+     for a reader who stays scrolled down while entries arrive above. */
+  line-height: 1.4;
   font-weight: 800;
   letter-spacing: 0.1em;
 }
