@@ -62,6 +62,7 @@ func TestIsKnownCommand(t *testing.T) {
 		{"export command", "export", true},
 		{"setup command", "setup", true},
 		{"mcp command", "mcp", true},
+		{"tail command", "tail", true},
 		{"install-skill command", "install-skill", true},
 		{"unknown command", "unknown", false},
 		{"random text", "random", false},

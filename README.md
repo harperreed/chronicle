@@ -80,6 +80,25 @@ chronicle search "bug" --tag golang --json        # Combined with JSON
 
 Relative phrases such as `yesterday` and `last week` are not supported.
 
+### Tail
+
+```bash
+chronicle tail                    # The last 10 entries, then each new one
+chronicle tail -n 0               # New entries only
+chronicle tail --tag work -t go   # Entries tagged work or go
+```
+
+`tail` prints the newest entries, oldest first, then prints each new entry as it is added, until you press Ctrl+C or send SIGTERM. It then exits with status 0. It opens storage read-only, so it is safe to leave running next to agents that write to the same log.
+
+```
+16:04:43  started spaceport kata backlog work  #spaceport #kata
+          ~/Public/src/2389/spaceport
+```
+
+Times are local. An entry from an earlier day also shows its date, as in `Nov 10 16:04:43`, and one from an earlier year shows the year too. The second line is the working directory, with your home folder shortened to `~`. A message of several lines keeps its later lines indented under the first. Colors turn off when output is not a terminal or `NO_COLOR` is set.
+
+A quick-add message can't start with a subcommand name, because `chronicle tail ...` runs the command. To log a message that starts with `tail`, use `chronicle add "tail ..."`.
+
 ### Export
 
 ```bash
