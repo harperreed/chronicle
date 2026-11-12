@@ -11,7 +11,7 @@ A fast, lightweight CLI tool for logging timestamped messages with metadata.
 - **Project logs** - Optional per-project log files (markdown or JSON)
 - **Absolute date filtering** - Use date-only ISO values or timestamps
 - **Multiple output formats** - Human-readable tables or JSON
-- **Local web interface** - Responsive timeline with search, filters, editing, and dark mode
+- **Local web interface** - Responsive timeline with search, filters, editing, and light and dark themes
 - **Data migration** - Convert between backends with `chronicle migrate`
 
 ## Installation
@@ -117,7 +117,9 @@ The page updates live: an entry that `chronicle add` or an agent writes shows up
 
 `--read-only` hides the composer, the edit dialog and the Edit and Delete buttons, refuses POST, PUT and DELETE requests with 405, and opens storage for reading only, so it is safe to leave running beside agents that write to the same log.
 
-The interface works with either configured storage backend and includes full-text search, tag and date filters, statistics, keyboard shortcuts, dark mode, and a mobile layout. It binds to localhost by default and rejects non-loopback Host headers so your journal is not exposed to the network. If you intentionally bind to a public interface, use `--allow-remote` and place Chronicle behind an authenticated reverse proxy.
+The page follows the system's light or dark setting, and the theme button cycles Auto, Light and Dark.
+
+The interface works with either configured storage backend and includes full-text search, tag and date filters, statistics, keyboard shortcuts, and a mobile layout. It binds to localhost by default and rejects non-loopback Host headers so your journal is not exposed to the network. If you intentionally bind to a public interface, use `--allow-remote` and place Chronicle behind an authenticated reverse proxy.
 
 ## MCP Server
 
@@ -231,6 +233,9 @@ sqlite3 ~/.local/share/chronicle/chronicle.db "SELECT * FROM entries"
 ```bash
 # Run tests
 go test ./... -v
+
+# Run the web page's JavaScript tests (needs Node)
+make test-js
 
 # Build
 go build -o chronicle .

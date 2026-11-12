@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -333,5 +334,89 @@ func TestWebAssetsStatsAndSecurityHeaders(t *testing.T) {
 	}
 	if result.Total != 2 || len(result.Tags) != 2 || result.Tags[0].Name != "work" || result.Tags[0].Count != 2 {
 		t.Fatalf("unexpected stats: %#v", result)
+	}
+}
+
+// embeddedAsset returns the text of a file embedded in the web assets.
+func embeddedAsset(t *testing.T, name string) string {
+	t.Helper()
+	data, err := assetsFS.ReadFile("assets/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// serifFamily matches the serif generic font family. A plain substring search can't find it,
+// because "sans-serif" holds "serif", so it looks for "serif" after a space, comma or colon.
+var serifFamily = regexp.MustCompile(`[\s,:]serif\b`)
+
+func TestStylesheetUsesApprovedLook(t *testing.T) {
+	css := strings.ToLower(embeddedAsset(t, "app.css"))
+
+	// The approved palette, light and dark. The dark accent and the live marker share one green.
+	palette := []string{
+		"#f8fafc", "#0b0f14", // Background.
+		"#ffffff", "#111821", // Surface.
+		"#f1f5f9", "#17202b", // Surface 2.
+		"#0f172a", "#e5edf5", // Ink.
+		"#64748b", "#8a99ab", // Muted.
+		"#e2e8f0", "#1f2a37", // Line.
+		"#2563eb", "#4ade80", // Accent.
+		"#16a34a", // Live marker in the light theme.
+	}
+	for _, hex := range palette {
+		if !strings.Contains(css, hex) {
+			t.Errorf("app.css has no %s from the approved palette", hex)
+		}
+	}
+	if !strings.Contains(css, "light-dark(") {
+		t.Error("app.css has no light-dark(), so its colors can't follow the system setting")
+	}
+
+	// The look Harper rejected: serif type, a cream background and a coral accent.
+	for _, rejected := range []string{"georgia", "ui-serif", "#f3f0e8", "#e35d35"} {
+		if strings.Contains(css, rejected) {
+			t.Errorf("app.css still has %s from the rejected look", rejected)
+		}
+	}
+	if match := serifFamily.FindString(css); match != "" {
+		t.Errorf("app.css still names the serif font family (found %q)", match)
+	}
+}
+
+func TestIndexLoadsThemeBeforeStylesheet(t *testing.T) {
+	page := embeddedAsset(t, "index.html")
+	const themeScript = `<script src="/theme.js"></script>`
+	const stylesheet = `href="/app.css"`
+
+	themeAt := strings.Index(page, themeScript)
+	if themeAt < 0 {
+		t.Fatalf("index.html has no %s; it can't have defer, so a stored theme applies before the first paint", themeScript)
+	}
+	stylesheetAt := strings.Index(page, stylesheet)
+	if stylesheetAt < 0 {
+		t.Fatalf("index.html has no %s", stylesheet)
+	}
+	if themeAt > stylesheetAt {
+		t.Errorf("index.html loads the theme script at byte %d, after the stylesheet at byte %d", themeAt, stylesheetAt)
+	}
+}
+
+// localAssetRef matches the src and href attributes of index.html that name a file the server holds.
+var localAssetRef = regexp.MustCompile(`(?:src|href)="(/[^"#?]+)"`)
+
+func TestIndexReferencesServedAssets(t *testing.T) {
+	server, _ := testServer(t)
+	refs := localAssetRef.FindAllStringSubmatch(embeddedAsset(t, "index.html"), -1)
+	if len(refs) == 0 {
+		t.Fatal("index.html names no stylesheet or script")
+	}
+	for _, ref := range refs {
+		t.Run(ref[1], func(t *testing.T) {
+			if status, _ := getBody(t, server, ref[1]); status != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want 200", ref[1], status)
+			}
+		})
 	}
 }

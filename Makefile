@@ -1,7 +1,7 @@
 # ABOUTME: Defines Chronicle's local build, test, install, and release commands.
 # ABOUTME: Provides the developer workflows mirrored by continuous integration.
 
-.PHONY: help build test test-coverage install clean lint fmt run-mcp dev-db release dev integration-test ci
+.PHONY: help build test test-js test-coverage install clean lint fmt run-mcp dev-db release dev integration-test ci
 
 INSTALL_DIR = $(shell gobin="$$(go env GOBIN)"; if [ -n "$$gobin" ]; then printf '%s' "$$gobin"; else gopath="$$(go env GOPATH)"; printf '%s/bin' "$${gopath%%:*}"; fi)
 
@@ -12,6 +12,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make build      - Build the chronicle binary"
 	@echo "  make test       - Run all tests"
+	@echo "  make test-js    - Run the web page's JavaScript tests (needs Node)"
 	@echo "  make install    - Install chronicle to the configured Go binary directory"
 	@echo "  make clean      - Remove built binaries"
 	@echo "  make lint       - Run linter"
@@ -30,6 +31,11 @@ build:
 test:
 	@echo "Running tests..."
 	go test -v ./...
+
+# Run the JavaScript tests of the web page
+test-js:
+	@echo "Running JavaScript tests..."
+	node --test internal/web/jstest/*.test.js
 
 # Run tests with coverage
 test-coverage:
@@ -92,5 +98,5 @@ integration-test: build
 	@echo "✓ Integration tests passed"
 
 # Run all checks (CI equivalent)
-ci: fmt lint test integration-test
+ci: fmt lint test test-js integration-test
 	@echo "✓ All CI checks passed"

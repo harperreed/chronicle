@@ -1,5 +1,930 @@
-:root{color-scheme:light;--bg:#f3f0e8;--surface:#fbfaf6;--surface2:#ebe7dc;--ink:#18201d;--muted:#69716c;--line:#d8d4c9;--accent:#e35d35;--accent-dark:#bf4220;--green:#1e6b52;--shadow:0 12px 35px rgba(28,35,31,.08);--radius:14px}
-:root[data-theme=dark]{color-scheme:dark;--bg:#111715;--surface:#19201d;--surface2:#232b27;--ink:#edf0e9;--muted:#9ba69f;--line:#344039;--accent:#f47a54;--accent-dark:#ff9473;--green:#65c59f;--shadow:0 16px 38px rgba(0,0,0,.25)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}.shell{width:min(1180px,calc(100% - 40px));margin:auto;min-height:100vh}.skip-link{position:fixed;z-index:10;top:10px;left:10px;transform:translateY(-150%);padding:8px 12px;background:var(--ink);color:var(--surface);border-radius:6px}.skip-link:focus{transform:none}.topbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:11px;color:inherit;text-decoration:none}.brand-mark{display:grid;place-items:center;width:38px;height:38px;background:var(--ink);color:var(--surface);border-radius:10px;font-family:Georgia,serif;font-size:23px;font-weight:700}.brand strong{display:block;font-family:Georgia,serif;font-size:20px;line-height:1}.brand small{font-size:9px;letter-spacing:.18em;color:var(--muted)}.top-actions,.status{display:flex;align-items:center;gap:12px}.status{font-size:12px;color:var(--muted)}.status i{width:7px;height:7px;border-radius:50%;background:#4ba87c;box-shadow:0 0 0 4px rgba(75,168,124,.12)}.icon-button{width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:20px}.hero{display:flex;align-items:end;justify-content:space-between;padding:58px 0 38px}.eyebrow{margin:0 0 10px;color:var(--accent);font-weight:750;letter-spacing:.16em;font-size:11px}.hero h1{max-width:750px;margin:0;font-family:Georgia,serif;font-size:clamp(38px,5vw,64px);line-height:1.03;letter-spacing:-.035em;font-weight:500}.lede{font-size:17px;color:var(--muted);margin:18px 0 0}.metric{text-align:right;padding-bottom:6px}.metric strong{display:block;font-family:Georgia,serif;font-size:36px;line-height:1}.metric span{font-size:12px;color:var(--muted)}.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}.composer{border-top:3px solid var(--accent);padding:24px 26px}.composer-head,.composer-foot,.section-head,.entry-meta,.dialog-head,.dialog-actions{display:flex;align-items:center;justify-content:space-between;gap:14px}.composer h2,.filters h2,.timeline h2,.dialog-head h2{font-family:Georgia,serif;margin:0;font-weight:500}.composer h2{font-size:19px}.shortcut{font-size:11px;color:var(--muted)}kbd{padding:2px 5px;border:1px solid var(--line);background:var(--surface2);border-radius:4px}textarea,input{border:1px solid var(--line);background:var(--surface);border-radius:9px;outline:none;transition:border .15s,box-shadow .15s}textarea:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}.composer textarea{display:block;width:100%;resize:vertical;border:0;border-radius:0;box-shadow:none!important;padding:20px 0 14px;font-family:Georgia,serif;font-size:21px;line-height:1.55;background:transparent}.composer-foot{border-top:1px solid var(--line);padding-top:16px}.tag-input-wrap{display:flex;align-items:center;flex:1;gap:5px;color:var(--accent)}.tag-input-wrap input{border:0;background:transparent;width:100%;box-shadow:none!important;color:var(--ink)}.primary,.secondary{border:0;border-radius:8px;padding:10px 16px;font-weight:700}.primary{display:flex;gap:18px;align-items:center;background:var(--accent);color:#fff}.primary:hover{background:var(--accent-dark)}.secondary{border:1px solid var(--line);background:var(--surface)}.workspace{display:grid;grid-template-columns:260px 1fr;gap:48px;padding:54px 0 72px}.filters{align-self:start;padding:22px;position:sticky;top:18px;box-shadow:none}.filters .section-head{margin-bottom:20px}.filters h2{font-size:22px}.text-button{padding:0;border:0;background:transparent;color:var(--accent);font-size:12px;font-weight:700}.filters label,.filter-label,.filters legend{display:block;border:0;padding:0;margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;font-weight:750;color:var(--muted)}.search-wrap{position:relative;margin-bottom:23px}.search-wrap span{position:absolute;left:10px;top:8px;color:var(--muted)}.filters input{width:100%;padding:9px 10px}.search-wrap input{padding-left:31px}.filters fieldset{border:0;padding:0;margin:0 0 22px}.filters fieldset label{margin-top:10px;text-transform:none;letter-spacing:0}.tag-cloud{display:flex;gap:7px;flex-wrap:wrap}.tag-filter{border:1px solid var(--line);background:var(--surface2);border-radius:20px;padding:5px 9px;font-size:12px}.tag-filter.active{background:var(--ink);color:var(--surface);border-color:var(--ink)}.timeline-head{padding-bottom:20px;border-bottom:1px solid var(--line)}.timeline-head .eyebrow{margin-bottom:4px}.timeline h2{font-size:30px}.result-count,.muted{color:var(--muted);font-size:12px}.entry-card{display:grid;grid-template-columns:22px 1fr;gap:16px}.entry-rail{position:relative}.entry-rail:after{content:"";position:absolute;top:28px;bottom:-1px;left:5px;width:1px;background:var(--line)}.entry-card:last-child .entry-rail:after{display:none}.entry-rail span{position:absolute;top:27px;left:1px;width:9px;height:9px;border:2px solid var(--accent);background:var(--bg);border-radius:50%;z-index:1}.entry-body{padding:24px 0 25px;border-bottom:1px solid var(--line)}.entry-meta time{font-size:11px;color:var(--green);font-weight:750;letter-spacing:.07em;text-transform:uppercase}.entry-actions{display:flex;gap:6px;opacity:0;transition:opacity .15s}.entry-card:hover .entry-actions,.entry-card:focus-within .entry-actions{opacity:1}.mini-button{border:0;background:transparent;color:var(--muted);font-size:11px;padding:4px}.mini-button:hover{color:var(--ink)}.mini-button.danger:hover{color:#c43b31}.entry-message{font-family:Georgia,serif;font-size:20px;line-height:1.45;margin:8px 0 12px;white-space:pre-wrap;overflow-wrap:anywhere}.entry-tags{display:flex;gap:6px;flex-wrap:wrap}.entry-tags span{font-size:11px;color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:4px;padding:3px 7px}.entry-context{margin-top:10px;color:var(--muted);font-size:11px}.empty{text-align:center;padding:75px 24px;border-bottom:1px solid var(--line)}.empty span{display:block;font-family:Georgia,serif;font-size:44px;color:var(--accent)}.empty h3{font-family:Georgia,serif;font-size:24px;margin:5px}.skeleton{height:130px;border-bottom:1px solid var(--line);background:linear-gradient(90deg,transparent,var(--surface2),transparent);background-size:200% 100%;animation:shimmer 1.2s infinite}@keyframes shimmer{to{background-position:-200% 0}}.load-more{display:block;margin:28px auto 0;padding:9px 18px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}footer{display:flex;justify-content:space-between;padding:25px 0;border-top:1px solid var(--line);color:var(--muted);font-size:11px}dialog{width:min(620px,calc(100% - 30px));padding:0;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:var(--ink);box-shadow:0 30px 80px rgba(0,0,0,.3)}dialog::backdrop{background:rgba(8,12,10,.62);backdrop-filter:blur(3px)}dialog form{padding:26px}.dialog-head{margin-bottom:20px}.dialog-head .eyebrow{margin-bottom:3px}.dialog-head h2{font-size:27px}dialog label{display:block;margin:13px 0 6px;font-size:12px;font-weight:700}dialog textarea,dialog input{width:100%;padding:11px;resize:vertical}.dialog-actions{justify-content:flex-end;margin-top:22px}.toasts{position:fixed;right:20px;bottom:20px;z-index:20;display:grid;gap:8px}.toast{max-width:340px;padding:11px 15px;border-radius:9px;background:var(--ink);color:var(--surface);box-shadow:var(--shadow);font-size:13px}.toast.error{background:#9d3029;color:#fff}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-@media(max-width:760px){.shell{width:min(100% - 24px,1180px)}.topbar{height:68px}.status span{display:none}.hero{padding:38px 0 28px;display:block}.metric{display:none}.composer{padding:19px}.composer-foot{align-items:stretch;flex-direction:column}.primary{justify-content:center}.shortcut{display:none}.workspace{display:block;padding-top:30px}.filters{position:static;margin-bottom:35px}.timeline h2{font-size:26px}.entry-actions{opacity:1}.entry-card{gap:8px}.entry-message{font-size:18px}footer{gap:20px}.top-actions{gap:7px}}
-@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+/* ABOUTME: Stylesheet for Chronicle's web interface: a clean light theme and a dark console theme, one set of tokens. */
+/* ABOUTME: The page follows the system setting unless theme.js sets data-theme, and data-mode decides which controls show. */
+
+/* ---- Tokens ----
+   Each color holds its light value, then its dark value. color-scheme picks the one that applies:
+   both follow the system setting, and data-theme forces one of them. */
+:root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#f8fafc, #0b0f14);
+  --surface: light-dark(#ffffff, #111821);
+  --surface2: light-dark(#f1f5f9, #17202b);
+  --ink: light-dark(#0f172a, #e5edf5);
+  --muted: light-dark(#64748b, #8a99ab);
+  --line: light-dark(#e2e8f0, #1f2a37);
+  --accent: light-dark(#2563eb, #4ade80);
+  --live: light-dark(#16a34a, #4ade80);
+
+  /* Tag and chip text, a step stronger than --muted. */
+  --chip-ink: light-dark(#334155, #c4d0dc);
+  /* The stream is reconnecting. */
+  --warn: light-dark(#b45309, #fbbf24);
+  /* Delete and error messages. */
+  --danger: light-dark(#dc2626, #f87171);
+
+  /* The tint of a new entry, and of an active filter. */
+  --accent-soft: color-mix(in srgb, var(--accent) 8%, transparent);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+:root[data-theme=light] {
+  color-scheme: light;
+}
+
+:root[data-theme=dark] {
+  color-scheme: dark;
+}
+
+/* ---- Base ----
+   No smooth scrolling: the live feed moves the scroll position itself when an entry lands above
+   the viewport, and smooth scrolling would animate that move into a visible jump. */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* An author display rule, such as .load-more's, would otherwise show an element the script hid. */
+[hidden] {
+  display: none !important;
+}
+
+/* Fields mark focus with their own border and ring, so only links and buttons get an outline. */
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.shell {
+  width: min(1180px, calc(100% - 40px));
+  min-height: 100vh;
+  margin: auto;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 10;
+  top: 10px;
+  left: 10px;
+  transform: translateY(-150%);
+  padding: 8px 12px;
+  background: var(--ink);
+  color: var(--surface);
+  border-radius: 6px;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Top bar ---- */
+/* The bar wraps instead of overflowing when a narrow screen can't fit the wordmark and the controls. */
+.topbar {
+  min-height: 68px;
+  padding: 8px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font: 650 20px/1 var(--font-mono);
+  letter-spacing: -0.02em;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand span {
+  color: var(--accent);
+}
+
+.top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 14px;
+  margin-left: auto;
+}
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* The stream marker. Its dot takes the color of its text, so a state only sets color. */
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.live-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentcolor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentcolor 22%, transparent);
+}
+
+.live-status[data-state=live] {
+  color: var(--live);
+}
+
+.live-status[data-state=reconnecting] {
+  color: var(--warn);
+}
+
+.live-status:not([data-state=live])::before {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The minimum width fits the longest label, so cycling the theme doesn't move the controls beside it. */
+.theme-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 76px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-button:hover {
+  border-color: var(--muted);
+}
+
+.theme-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* ---- Header ---- */
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 48px 0 34px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+}
+
+.hero h1 {
+  max-width: 750px;
+  margin: 0;
+  font-size: clamp(32px, 4.4vw, 52px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  font-weight: 650;
+}
+
+.lede {
+  font-size: 17px;
+  color: var(--muted);
+  margin: 16px 0 0;
+}
+
+.metric {
+  text-align: right;
+  padding-bottom: 6px;
+}
+
+.metric strong {
+  display: block;
+  font: 600 36px/1 var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+.metric span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- Panels, composer and buttons ---- */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.composer {
+  padding: 22px 24px;
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.composer-head,
+.composer-foot,
+.section-head,
+.entry-meta,
+.dialog-head,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.composer h2,
+.filters h2,
+.timeline h2,
+.dialog-head h2 {
+  margin: 0;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.composer h2 {
+  font-size: 17px;
+}
+
+.shortcut {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  background: var(--surface2);
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+
+textarea,
+input {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 7px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+textarea:focus,
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  border: 0;
+  border-radius: 0;
+  padding: 18px 0 14px;
+  font-size: 18px;
+  line-height: 1.55;
+  background: transparent;
+}
+
+/* The whole composer shows focus, so the fields inside don't draw a ring of their own. */
+.composer textarea:focus,
+.tag-input-wrap input:focus {
+  box-shadow: none;
+}
+
+.composer-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.tag-input-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 5px;
+  color: var(--accent);
+}
+
+.tag-input-wrap input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.primary,
+.secondary {
+  border: 0;
+  border-radius: 7px;
+  padding: 9px 16px;
+  font-weight: 650;
+}
+
+.primary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, var(--ink));
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.secondary {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.icon-button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 20px;
+}
+
+/* ---- Filters ---- */
+.workspace {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 48px;
+  padding: 48px 0 72px;
+}
+
+.filters {
+  align-self: start;
+  padding: 20px;
+  position: sticky;
+  top: 18px;
+}
+
+.filters .section-head {
+  margin-bottom: 18px;
+}
+
+.filters h2 {
+  font-size: 18px;
+}
+
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.filters label,
+.filter-label,
+.filters legend {
+  display: block;
+  border: 0;
+  padding: 0;
+  margin: 0 0 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 750;
+  color: var(--muted);
+}
+
+.search-wrap {
+  position: relative;
+  margin-bottom: 22px;
+}
+
+.search-wrap span {
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  color: var(--muted);
+}
+
+.filters input {
+  width: 100%;
+  padding: 8px 10px;
+}
+
+.search-wrap input {
+  padding-left: 31px;
+}
+
+.filters fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 22px;
+}
+
+.filters fieldset label {
+  margin-top: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tag-cloud {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tag-filter {
+  border: 1px solid var(--line);
+  background: var(--surface2);
+  color: var(--chip-ink);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.tag-filter:hover {
+  border-color: var(--muted);
+}
+
+.tag-filter.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---- Timeline ---- */
+.timeline-head {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline-head .eyebrow {
+  margin-bottom: 4px;
+}
+
+.timeline h2 {
+  font-size: 26px;
+}
+
+.result-count,
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.result-count {
+  font-family: var(--font-mono);
+}
+
+.entry-card {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 6px;
+}
+
+.entry-rail {
+  position: relative;
+}
+
+.entry-rail::after {
+  content: "";
+  position: absolute;
+  top: 28px;
+  bottom: -1px;
+  left: 5px;
+  width: 1px;
+  background: var(--line);
+}
+
+.entry-card:last-child .entry-rail::after {
+  display: none;
+}
+
+.entry-rail span {
+  position: absolute;
+  top: 27px;
+  left: 1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--muted);
+  background: var(--bg);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.entry-body {
+  padding: 22px 14px 23px;
+  border-bottom: 1px solid var(--line);
+  transition: background-color 0.4s, box-shadow 0.4s;
+}
+
+.entry-stamp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry-meta time {
+  font: 500 12px/1.4 var(--font-mono);
+  color: var(--muted);
+}
+
+/* An entry that arrived while the page was open. The script sets data-new and clears it later. */
+.new-tag {
+  display: none;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.entry-card[data-new] .new-tag {
+  display: inline-block;
+}
+
+.entry-card[data-new] .entry-body {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.entry-card[data-new] .entry-rail span {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.entry-actions {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.entry-card:hover .entry-actions,
+.entry-card:focus-within .entry-actions {
+  opacity: 1;
+}
+
+.mini-button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px;
+}
+
+.mini-button:hover {
+  color: var(--ink);
+}
+
+.mini-button.danger:hover {
+  color: var(--danger);
+}
+
+.entry-message {
+  font-size: 17px;
+  font-weight: 550;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  margin: 6px 0 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.entry-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.entry-tags span {
+  font-size: 12px;
+  color: var(--chip-ink);
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+
+.entry-context {
+  margin-top: 10px;
+  color: var(--muted);
+  font: 12px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  text-align: center;
+  padding: 72px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.empty span {
+  display: block;
+  font-size: 40px;
+  color: var(--accent);
+}
+
+.empty h3 {
+  font-size: 22px;
+  font-weight: 650;
+  margin: 5px;
+}
+
+.empty p {
+  color: var(--muted);
+}
+
+.skeleton {
+  height: 130px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, transparent, var(--surface2), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.load-more {
+  display: block;
+  margin: 28px auto 0;
+  padding: 9px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 25px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---- Edit dialog and toasts ---- */
+dialog {
+  width: min(620px, calc(100% - 30px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+}
+
+dialog::backdrop {
+  background: rgba(11, 15, 20, 0.6);
+  backdrop-filter: blur(3px);
+}
+
+dialog form {
+  padding: 26px;
+}
+
+.dialog-head {
+  margin-bottom: 20px;
+}
+
+.dialog-head .eyebrow {
+  margin-bottom: 3px;
+}
+
+.dialog-head h2 {
+  font-size: 24px;
+}
+
+dialog label {
+  display: block;
+  margin: 13px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+dialog textarea,
+dialog input {
+  width: 100%;
+  padding: 11px;
+  resize: vertical;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+}
+
+.toast {
+  max-width: 340px;
+  padding: 11px 15px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+}
+
+.toast.error {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* ---- Modes ----
+   The server marks the html tag with data-mode before the page reaches the browser, so what a mode
+   lacks is hidden before the first paint. !important keeps a later display rule from showing a
+   write control in read-only mode. */
+:root[data-mode=read-only] .full-only,
+:root:not([data-mode=read-only]) .read-only-only {
+  display: none !important;
+}
+
+/* ---- Small screens ---- */
+@media (max-width: 760px) {
+  .shell {
+    width: min(100% - 24px, 1180px);
+  }
+
+  .topbar {
+    min-height: 60px;
+  }
+
+  .brand {
+    font-size: 18px;
+  }
+
+  .top-actions {
+    gap: 8px;
+  }
+
+  .badge {
+    padding: 2px 6px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  .live-status {
+    gap: 6px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+
+  .theme-label {
+    display: none;
+  }
+
+  .theme-button {
+    min-width: 0;
+    padding: 0 9px;
+  }
+
+  .hero {
+    display: block;
+    padding: 32px 0 26px;
+  }
+
+  .metric {
+    display: none;
+  }
+
+  .composer {
+    padding: 18px;
+  }
+
+  .composer-foot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .primary {
+    justify-content: center;
+  }
+
+  .shortcut {
+    display: none;
+  }
+
+  .workspace {
+    display: block;
+    padding-top: 28px;
+  }
+
+  .filters {
+    position: static;
+    margin-bottom: 32px;
+  }
+
+  .timeline h2 {
+    font-size: 22px;
+  }
+
+  .entry-actions {
+    opacity: 1;
+  }
+
+  .entry-card {
+    gap: 4px;
+  }
+
+  .entry-body {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .entry-message {
+    font-size: 16px;
+  }
+
+  footer {
+    gap: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

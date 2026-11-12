@@ -1,10 +1,13 @@
 <!doctype html>
+<!-- ABOUTME: The page of Chronicle's web interface. The server marks its html tag with the mode, full or read-only. -->
+<!-- ABOUTME: It holds markup only: app.css styles it, theme.js picks its theme, and app.js fills it from the API. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Chronicle — your searchable activity log">
   <title>Chronicle</title>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
 </head>
@@ -12,27 +15,25 @@
   <a class="skip-link" href="#timeline">Skip to timeline</a>
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Chronicle home">
-        <span class="brand-mark" aria-hidden="true">C</span>
-        <span><strong>Chronicle</strong><small>ACTIVITY LOG</small></span>
-      </a>
+      <a class="brand" href="/" aria-label="Chronicle home">chronicle<span>_</span></a>
       <div class="top-actions">
-        <span class="status"><i></i><span>Local &amp; private</span></span>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" title="Toggle color theme">◐</button>
+        <span class="badge read-only-only">READ ONLY</span>
+        <span id="live-status" class="live-status" data-state="connecting" role="status">Connecting</span>
+        <button class="theme-button" id="theme-toggle" type="button" aria-label="Theme: Auto" title="Theme: Auto"><span class="theme-icon" aria-hidden="true">◐</span><span class="theme-label">Auto</span></button>
       </div>
     </header>
 
     <main>
       <section class="hero" aria-labelledby="page-title">
         <div>
-          <p class="eyebrow">YOUR WORK, REMEMBERED</p>
-          <h1 id="page-title">What have you been working on?</h1>
-          <p class="lede">Capture the small wins, decisions, and context that make up your day.</p>
+          <p class="eyebrow"><span class="full-only">YOUR WORK, REMEMBERED</span><span class="read-only-only">LIVE FEED</span></p>
+          <h1 id="page-title"><span class="full-only">What have you been working on?</span><span class="read-only-only">Agent activity</span></h1>
+          <p class="lede full-only">Capture the small wins, decisions, and context that make up your day.</p>
         </div>
         <div class="metric" aria-label="Total entries"><strong id="total-count">—</strong><span>entries recorded</span></div>
       </section>
 
-      <section class="composer panel" aria-labelledby="compose-title">
+      <section class="composer panel full-only" aria-labelledby="compose-title">
         <form id="entry-form">
           <div class="composer-head">
             <h2 id="compose-title">Add to your chronicle</h2>
@@ -78,7 +79,7 @@
     <footer><span>Chronicle</span><span>Your data stays on this machine.</span></footer>
   </div>
 
-  <dialog id="edit-dialog">
+  <dialog id="edit-dialog" class="full-only">
     <form id="edit-form">
       <div class="dialog-head"><div><p class="eyebrow">EDIT ENTRY</p><h2>Update your note</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="Close">×</button></div>
       <input id="edit-id" type="hidden">
@@ -92,7 +93,10 @@
     <article class="entry-card">
       <div class="entry-rail"><span></span></div>
       <div class="entry-body">
-        <div class="entry-meta"><time></time><div class="entry-actions"><button data-action="edit" class="mini-button" type="button" aria-label="Edit entry">Edit</button><button data-action="delete" class="mini-button danger" type="button" aria-label="Delete entry">Delete</button></div></div>
+        <div class="entry-meta">
+          <div class="entry-stamp"><time></time><span class="new-tag">NEW</span></div>
+          <div class="entry-actions full-only"><button data-action="edit" class="mini-button" type="button" aria-label="Edit entry">Edit</button><button data-action="delete" class="mini-button danger" type="button" aria-label="Delete entry">Delete</button></div>
+        </div>
         <p class="entry-message"></p><div class="entry-tags"></div><div class="entry-context"></div>
       </div>
     </article>

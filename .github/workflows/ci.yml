@@ -38,6 +38,14 @@ jobs:
       - name: Run tests
         run: go test -short -race ./...
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run JavaScript tests
+        run: make test-js
+
       - name: Run tests with coverage
         run: go test -short -coverprofile=coverage.out -covermode=atomic ./...
 

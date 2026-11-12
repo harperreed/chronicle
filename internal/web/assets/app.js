@@ -1,3 +1,5 @@
+// ABOUTME: Browser client for Chronicle's web interface: it fills the page from the API and sends changes back.
+// ABOUTME: Its theme button cycles auto, light and dark through the ChronicleTheme module that theme.js defines.
 (() => {
   'use strict';
   const $ = (selector) => document.querySelector(selector);
@@ -114,10 +116,20 @@
   });
   els.dialog.addEventListener('click', event => { if (event.target === els.dialog) els.dialog.close(); });
 
-  const theme = localStorage.getItem('chronicle-theme');
-  if (theme) document.documentElement.dataset.theme = theme;
-  $('#theme-toggle').addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; localStorage.setItem('chronicle-theme', next);
+  // theme.js applied the stored mode before the first paint, so data-theme on the html element says which mode is on.
+  const root = document.documentElement;
+  const themeButton = $('#theme-toggle');
+  const themeIcons = { auto: '◐', light: '☼', dark: '☾' };
+  function showTheme(mode) {
+    const name = mode[0].toUpperCase() + mode.slice(1);
+    themeButton.setAttribute('aria-label', `Theme: ${name}`); themeButton.title = `Theme: ${name}`;
+    themeButton.querySelector('.theme-icon').textContent = themeIcons[mode]; themeButton.querySelector('.theme-label').textContent = name;
+  }
+  showTheme(ChronicleTheme.normalize(root.dataset.theme));
+  themeButton.addEventListener('click', () => {
+    const mode = ChronicleTheme.next(ChronicleTheme.normalize(root.dataset.theme));
+    ChronicleTheme.apply(mode, root); showTheme(mode);
+    try { localStorage.setItem('chronicle-theme', mode); } catch { /* Without storage, the choice lasts until the page closes. */ }
   });
 
   Promise.all([loadEntries(), loadStats()]);
