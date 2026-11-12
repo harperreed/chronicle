@@ -153,6 +153,8 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          # A missing archive must fail the step, not write an empty sha256 into the formula.
+          set -o pipefail
           : "${HOMEBREW_TAP_TOKEN:?HOMEBREW_TAP_TOKEN is required}"
           : "${TAG_NAME:?TAG_NAME is required}"
 
@@ -172,8 +174,8 @@ jobs:
           fi
           mkdir -p Formula
           # Publish a formula, never a cask: Homebrew quarantines cask downloads, and macOS holds
-          # the quarantined, unnotarized binary at launch. Drop any cask so its users can't stay on
-          # an old quarantined build.
+          # the quarantined, unnotarized binary at launch. Remove the cask so new installs can't
+          # pick it up. Machines that already have it keep it until they switch by hand (README).
           git rm -f --ignore-unmatch Casks/chronicle.rb
 
           cat > Formula/chronicle.rb << EOF

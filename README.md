@@ -16,6 +16,19 @@ A fast, lightweight CLI tool for logging timestamped messages with metadata.
 
 ## Installation
 
+### Homebrew (macOS)
+
+```bash
+brew install harperreed/tap/chronicle
+```
+
+Versions 1.8.1 through 1.9.0 shipped as a Homebrew cask, and macOS can hold that unnotarized binary at launch so every command hangs. If you installed the cask, switch to the formula:
+
+```bash
+brew uninstall --cask chronicle
+brew install harperreed/tap/chronicle
+```
+
 ### From Source
 
 ```bash

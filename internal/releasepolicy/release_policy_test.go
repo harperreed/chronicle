@@ -183,11 +183,17 @@ func TestTapPublicationIsFailClosedAndFormulaOnly(t *testing.T) {
 		}
 	}
 	required := []string{
+		// Without pipefail, a missing archive gives an empty sha256 and the step still succeeds.
+		`set -o pipefail`,
 		`Formula/chronicle.rb`,
 		`class Chronicle < Formula`,
 		`bin.install`,
-		// A stale cask left in the tap would keep cask users on an old, quarantined binary.
+		`=> "chronicle"`,
+		// A cask left in the tap would keep offering the quarantined install.
 		`git rm -f --ignore-unmatch Casks/chronicle.rb`,
+		// git rm stages a change by itself, so a missing git add would still commit and push,
+		// deleting the cask while leaving an old formula in place.
+		`git add Formula/chronicle.rb`,
 		`: "${HOMEBREW_TAP_TOKEN:?`,
 		`git commit`,
 		`git push`,
@@ -197,8 +203,24 @@ func TestTapPublicationIsFailClosedAndFormulaOnly(t *testing.T) {
 			t.Errorf("tap publication is missing required fail-closed formula behavior %q", want)
 		}
 	}
+	mustPrecede(t, run, `set -o pipefail`, `sha256sum`)
+	mustPrecede(t, run, `git rm -f --ignore-unmatch Casks/chronicle.rb`, `git commit`)
+	mustPrecede(t, run, `git add Formula/chronicle.rb`, `git commit`)
+	mustPrecede(t, run, `git commit`, `git push`)
 	if optionalScalar(tapStep, "if") != "" {
 		t.Error("tap publication must not be conditionally skipped")
+	}
+	if _, ok := tapStep["continue-on-error"]; ok {
+		t.Error("tap publication must not continue on error")
+	}
+}
+
+// mustPrecede fails unless first appears in run, and before the first occurrence of second.
+func mustPrecede(t *testing.T, run, first, second string) {
+	t.Helper()
+	firstAt, secondAt := strings.Index(run, first), strings.Index(run, second)
+	if firstAt < 0 || secondAt < 0 || firstAt > secondAt {
+		t.Errorf("tap publication must run %q before %q", first, second)
 	}
 }
 
