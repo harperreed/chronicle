@@ -107,10 +107,15 @@ chronicle install-skill                   # Install chronicle skill for Claude C
 Chronicle includes a responsive local web app for capturing, browsing, searching, editing, and deleting entries.
 
 ```bash
-chronicle web                         # http://127.0.0.1:8080
+chronicle web                         # http://127.0.0.1:1066
 chronicle web --address 127.0.0.1:9000
 chronicle web --open=false            # Don't launch a browser automatically
+chronicle web --read-only             # Live view of the log that can't change it
 ```
+
+The page updates live: an entry that `chronicle add` or an agent writes shows up within about a second, marked NEW.
+
+`--read-only` hides the composer, the edit dialog and the Edit and Delete buttons, refuses POST, PUT and DELETE requests with 405, and opens storage for reading only, so it is safe to leave running beside agents that write to the same log.
 
 The interface works with either configured storage backend and includes full-text search, tag and date filters, statistics, keyboard shortcuts, dark mode, and a mobile layout. It binds to localhost by default and rejects non-loopback Host headers so your journal is not exposed to the network. If you intentionally bind to a public interface, use `--allow-remote` and place Chronicle behind an authenticated reverse proxy.
 

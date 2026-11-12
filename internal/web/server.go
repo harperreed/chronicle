@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,10 +35,23 @@ var (
 	errInvalidUntil = errors.New("invalid until date")
 )
 
+// The modes the page is marked with. Its stylesheet and script read the mode from the data-mode
+// attribute of the html element.
+const (
+	modeFull     = "full"
+	modeReadOnly = "read-only"
+)
+
+// htmlTag is the opening tag of index.html that the server adds data-mode to.
+const htmlTag = `<html lang="en">`
+
 // Server serves Chronicle's web application and API.
 type Server struct {
-	store        storage.Storage
+	// reader serves every read. writer serves the writes and is nil in read-only mode.
+	reader       storage.Reader
+	writer       storage.Storage
 	app          http.Handler
+	index        []byte // index.html, marked with the mode.
 	allowRemote  bool
 	pollInterval time.Duration
 
@@ -58,12 +72,34 @@ type Options struct {
 	PollInterval time.Duration
 }
 
-// New creates a web server backed by store. By default, only loopback requests
-// are accepted to protect the unauthenticated local API from DNS rebinding.
+// New creates a web server backed by store, with every route: the reading ones and the ones that
+// create, edit and delete entries. By default, only loopback requests are accepted to protect the
+// unauthenticated local API from DNS rebinding.
 func New(store storage.Storage, options ...Options) (*Server, error) {
+	return newServer(store, store, modeFull, options)
+}
+
+// NewReadOnly creates a web server that only reads from reader. It registers no route that
+// creates, edits or deletes entries, so those requests get 405, and its page is marked
+// read-only. It takes a Reader, which has no write methods, so the server can't change an entry
+// even by mistake.
+func NewReadOnly(reader storage.Reader, options ...Options) (*Server, error) {
+	return newServer(reader, nil, modeReadOnly, options)
+}
+
+// newServer builds the server that New and NewReadOnly share. A nil writer means read-only mode.
+func newServer(reader storage.Reader, writer storage.Storage, mode string, options []Options) (*Server, error) {
 	assets, err := fs.Sub(assetsFS, "assets")
 	if err != nil {
 		return nil, fmt.Errorf("load web assets: %w", err)
+	}
+	page, err := fs.ReadFile(assets, "index.html")
+	if err != nil {
+		return nil, fmt.Errorf("load web assets: %w", err)
+	}
+	index, err := markIndex(page, mode)
+	if err != nil {
+		return nil, err
 	}
 	var settings Options
 	if len(options) > 0 {
@@ -73,8 +109,10 @@ func New(store storage.Storage, options ...Options) (*Server, error) {
 		settings.PollInterval = defaultPollInterval
 	}
 	s := &Server{
-		store:        store,
+		reader:       reader,
+		writer:       writer,
 		app:          http.FileServer(http.FS(assets)),
+		index:        index,
 		allowRemote:  settings.AllowRemote,
 		pollInterval: settings.PollInterval,
 		streamsDone:  make(chan struct{}),
@@ -82,19 +120,39 @@ func New(store storage.Storage, options ...Options) (*Server, error) {
 	return s, nil
 }
 
-// Handler returns the complete web application handler.
+// markIndex adds the data-mode attribute for mode to the html tag of the page. The page needs it
+// from the first byte, so the stylesheet can hide what the mode lacks before anything paints. A
+// page without the tag is an error, because serving it would leave a read-only page unmarked.
+func markIndex(page []byte, mode string) ([]byte, error) {
+	if !bytes.Contains(page, []byte(htmlTag)) {
+		return nil, fmt.Errorf("index.html has no %s tag to mark with the mode", htmlTag)
+	}
+	marked := `<html lang="en" data-mode="` + mode + `">`
+	return bytes.Replace(page, []byte(htmlTag), []byte(marked), 1), nil
+}
+
+// Handler returns the complete web application handler. In read-only mode it leaves out the
+// routes that change entries, and the mux answers a request for one with 405.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/entries", s.listEntries)
-	mux.HandleFunc("POST /api/entries", s.createEntry)
 	mux.HandleFunc("GET /api/entries/{id}", s.getEntry)
-	mux.HandleFunc("PUT /api/entries/{id}", s.updateEntry)
-	mux.HandleFunc("DELETE /api/entries/{id}", s.deleteEntry)
 	mux.HandleFunc("GET /api/stats", s.stats)
 	mux.HandleFunc("GET /api/stream", s.streamEntries)
+	if s.writer != nil {
+		mux.HandleFunc("POST /api/entries", s.createEntry)
+		mux.HandleFunc("PUT /api/entries/{id}", s.updateEntry)
+		mux.HandleFunc("DELETE /api/entries/{id}", s.deleteEntry)
+	}
+	mux.HandleFunc("GET /{$}", s.serveIndex)
 	mux.Handle("GET /", s.app)
 	return securityHeaders(mux, s.allowRemote)
+}
+
+// serveIndex answers GET / with the page marked with the server's mode.
+func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(s.index))
 }
 
 // StopStreams ends every open stream. It is safe to call more than once. Streams never end on
@@ -133,7 +191,7 @@ func (s *Server) listEntries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	entries, err := s.store.SearchEntries(filter, limit)
+	entries, err := s.reader.SearchEntries(filter, limit)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "could not search entries")
 		return
@@ -163,7 +221,7 @@ func (s *Server) createEntry(w http.ResponseWriter, r *http.Request) {
 		Timestamp: timestamp, Message: strings.TrimSpace(input.Message), Tags: normalizeTags(input.Tags),
 		Hostname: hostname, Username: username, WorkingDirectory: workingDirectory,
 	}
-	id, err := s.store.CreateEntry(entry)
+	id, err := s.writer.CreateEntry(entry)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create entry")
 		return
@@ -173,7 +231,7 @@ func (s *Server) createEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getEntry(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.store.GetEntry(r.PathValue("id"))
+	entry, err := s.reader.GetEntry(r.PathValue("id"))
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -182,7 +240,7 @@ func (s *Server) getEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateEntry(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.store.GetEntry(r.PathValue("id"))
+	entry, err := s.reader.GetEntry(r.PathValue("id"))
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -196,7 +254,7 @@ func (s *Server) updateEntry(w http.ResponseWriter, r *http.Request) {
 	if input.Timestamp != nil {
 		entry.Timestamp = *input.Timestamp
 	}
-	if err := s.store.UpdateEntry(*entry); err != nil {
+	if err := s.writer.UpdateEntry(*entry); err != nil {
 		writeStorageError(w, err)
 		return
 	}
@@ -204,7 +262,7 @@ func (s *Server) updateEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteEntry(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteEntry(r.PathValue("id")); err != nil {
+	if err := s.writer.DeleteEntry(r.PathValue("id")); err != nil {
 		writeStorageError(w, err)
 		return
 	}
@@ -212,7 +270,7 @@ func (s *Server) deleteEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stats(w http.ResponseWriter, _ *http.Request) {
-	entries, err := s.store.ListEntries(0)
+	entries, err := s.reader.ListEntries(0)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not load statistics")
 		return

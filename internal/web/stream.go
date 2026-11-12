@@ -33,12 +33,16 @@ func (s *Server) streamEntries(w http.ResponseWriter, r *http.Request) {
 	// SQLite reports a text search it can't parse only when the feed meets a new entry. The
 	// stream would end at the next new entry, and every reconnect would end the same way, so the
 	// page would never show an entry. Search once now, so that the request fails here the way
-	// GET /api/entries fails.
-	if _, err := s.store.SearchEntries(filter, 1); err != nil {
-		writeError(w, http.StatusBadRequest, "could not search entries")
-		return
+	// GET /api/entries fails. Only the text can fail: filterFromQuery has checked the dates, and
+	// tags can't be malformed. Without text, skip the search, because on markdown it reads every
+	// entry file.
+	if filter.Text != "" {
+		if _, err := s.reader.SearchEntries(filter, 1); err != nil {
+			writeError(w, http.StatusBadRequest, "could not search entries")
+			return
+		}
 	}
-	feed, err := s.store.OpenFeed(filter)
+	feed, err := s.reader.OpenFeed(filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not open entry feed")
 		return

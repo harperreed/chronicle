@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -371,6 +372,72 @@ func TestStreamRejectsUnsearchableText(t *testing.T) {
 			status, body := getBody(t, server, "/api/stream"+query)
 			if status != wantStatus || body != wantBody {
 				t.Errorf("GET /api/stream%s = %d %q, want %d %q", query, status, body, wantStatus, wantBody)
+			}
+		})
+	}
+}
+
+// searchCounter wraps a real store and counts the SearchEntries calls made through it. Everything
+// else goes to the store untouched.
+type searchCounter struct {
+	storage.Storage
+	searches atomic.Int32
+}
+
+func (c *searchCounter) SearchEntries(filter *storage.SearchFilter, limit int) ([]storage.Entry, error) {
+	c.searches.Add(1)
+	return c.Storage.SearchEntries(filter, limit)
+}
+
+// TestStreamSearchesOnlyWhenFilterHasText pins that connecting does not read the whole store
+// unless the filter carries text. Only SQLite's full-text search can reject a filter, and only
+// through its text. On markdown the check reads every entry file, so a stream with a tag or a
+// date, or with no filter, must skip it.
+func TestStreamSearchesOnlyWhenFilterHasText(t *testing.T) {
+	tests := []struct {
+		name         string
+		query        string
+		wantSearches int32
+	}{
+		{"no filter", "", 0},
+		{"tag only", "?tag=keep", 0},
+		{"dates only", "?since=2000-01-01&until=2999-12-31", 0},
+		{"text", "?q=ship", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &searchCounter{Storage: newMarkdownStreamStore(t)}
+			_, server := streamServer(t, store, 0)
+
+			stream := connectStream(t, server, "/api/stream"+tt.query)
+			stream.ready(t) // The check runs before ready, so the count is final from here.
+			if got := store.searches.Load(); got != tt.wantSearches {
+				t.Errorf("GET /api/stream%s made %d searches, want %d", tt.query, got, tt.wantSearches)
+			}
+		})
+	}
+}
+
+func TestStreamWithoutTextFilterStreams(t *testing.T) {
+	backends := []struct {
+		name     string
+		newStore func(*testing.T) storage.Storage
+	}{
+		{"markdown", func(t *testing.T) storage.Storage { return newMarkdownStreamStore(t) }},
+		{"sqlite", func(t *testing.T) storage.Storage { return newSqliteStreamStore(t) }},
+	}
+	for _, backend := range backends {
+		t.Run(backend.name, func(t *testing.T) {
+			store := backend.newStore(t)
+			_, server := streamServer(t, store, 0)
+
+			stream := connectStream(t, server, "/api/stream?tag=keep")
+			stream.ready(t)
+
+			addTestEntry(t, store, "other tag", "drop")
+			want := addTestEntry(t, store, "right tag", "keep")
+			if entry := stream.entry(t); entry.ID != want {
+				t.Fatalf("first entry = %+v, want the keep entry %s", entry, want)
 			}
 		})
 	}

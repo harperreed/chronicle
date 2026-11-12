@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,6 +160,148 @@ func TestRejectsRemoteHostAndCrossOriginRequests(t *testing.T) {
 	app.Handler().ServeHTTP(crossOriginResponse, crossOrigin)
 	if crossOriginResponse.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin status = %d", crossOriginResponse.Code)
+	}
+}
+
+// readOnlyTestServer serves a markdown folder through NewReadOnly. The server holds a store that
+// OpenMarkdownReader opened on the folder, as the web command does. The test gets a second store
+// on the same folder, and that store is the only way to change data.
+func readOnlyTestServer(t *testing.T) (*httptest.Server, storage.Storage) {
+	t.Helper()
+	dataDir := t.TempDir()
+	writer, err := storage.NewMarkdownStore(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := storage.OpenMarkdownReader(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewReadOnly(reader, Options{PollInterval: streamTestPollInterval})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	t.Cleanup(func() {
+		app.StopStreams()
+		server.Close()
+	})
+	return server, writer
+}
+
+func TestReadOnlyServerRefusesWrites(t *testing.T) {
+	server, writer := readOnlyTestServer(t)
+	id := addTestEntry(t, writer, "keep me", "keep")
+
+	changed := map[string]any{"message": "changed", "tags": []string{"changed"}}
+	writes := []struct {
+		method string
+		path   string
+		body   any
+	}{
+		{http.MethodPost, "/api/entries", changed},
+		{http.MethodPut, "/api/entries/x", changed},
+		{http.MethodDelete, "/api/entries/x", nil},
+		// A route that existed would change or delete this entry.
+		{http.MethodPut, "/api/entries/" + id, changed},
+		{http.MethodDelete, "/api/entries/" + id, nil},
+	}
+	for _, write := range writes {
+		t.Run(write.method+" "+write.path, func(t *testing.T) {
+			response := request(t, server.Client(), write.method, server.URL+write.path, write.body)
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want 405", response.StatusCode)
+			}
+		})
+	}
+
+	entries, err := writer.ListEntries(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != id || entries[0].Message != "keep me" {
+		t.Fatalf("entries after the refused writes = %+v, want the one untouched entry %s", entries, id)
+	}
+}
+
+func TestReadOnlyServerServesReads(t *testing.T) {
+	server, writer := readOnlyTestServer(t)
+	id := addTestEntry(t, writer, "read me", "work")
+
+	for _, path := range []string{"/api/health", "/api/entries", "/api/entries/" + id, "/api/stats", "/app.css"} {
+		t.Run(path, func(t *testing.T) {
+			status, body := getBody(t, server, path)
+			if status != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want 200 (body %q)", path, status, body)
+			}
+		})
+	}
+
+	_, body := getBody(t, server, "/api/entries")
+	if !strings.Contains(body, "read me") {
+		t.Fatalf("GET /api/entries body = %q, want it to hold the entry the writer added", body)
+	}
+}
+
+func TestReadOnlyServerStreamsNewEntries(t *testing.T) {
+	server, writer := readOnlyTestServer(t)
+
+	stream := connectStream(t, server, "/api/stream")
+	stream.ready(t)
+
+	id := addTestEntry(t, writer, "written while watching")
+	if entry := stream.entry(t); entry.ID != id || entry.Message != "written while watching" {
+		t.Fatalf("entry = %+v, want ID %s", entry, id)
+	}
+}
+
+func TestIndexMarksMode(t *testing.T) {
+	store := newMarkdownStreamStore(t)
+	full, err := New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly, err := NewReadOnly(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		app     *Server
+		want    string
+		wantNot string
+	}{
+		{"read-only", readOnly, `<html lang="en" data-mode="read-only">`, `data-mode="full"`},
+		{"full", full, `<html lang="en" data-mode="full">`, `data-mode="read-only"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			tt.app.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "http://localhost/", nil))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("GET / status = %d, want 200", recorder.Code)
+			}
+			if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+				t.Errorf("Content-Type = %q, want text/html", got)
+			}
+			body := recorder.Body.String()
+			if !strings.Contains(body, tt.want) {
+				t.Errorf("GET / body has no %s", tt.want)
+			}
+			if strings.Contains(body, tt.wantNot) {
+				t.Errorf("GET / body has %s, want only the %s mode", tt.wantNot, tt.name)
+			}
+		})
+	}
+}
+
+func TestMarkIndexNeedsHTMLTag(t *testing.T) {
+	// A page without the tag would reach the browser unmarked, and a read-only server would
+	// serve a page that doesn't know it is read-only. Refuse it when the server is built.
+	if _, err := markIndex([]byte("<!doctype html><html><body></body></html>"), modeReadOnly); err == nil {
+		t.Fatal("markIndex accepted a page with no <html lang=\"en\"> tag")
 	}
 }
 
