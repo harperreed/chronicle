@@ -30,7 +30,8 @@ type markdownFeed struct {
 	filter  *SearchFilter
 
 	// folderModTimes holds each day folder's modified time as seen just before the feed last
-	// listed the folder. The feed lists the folder again only after that time changes.
+	// listed the folder. The feed lists the folder again when that time changes, and on every poll
+	// while the time is less than markdownRecentFolderWindow old.
 	folderModTimes map[string]time.Time
 	// seenPaths holds the entry files the feed has read, plus the ones that already failed
 	// to parse when it opened.

@@ -223,7 +223,9 @@ func TestMarkdownFeedRetriesFilesThatFailedToParse(t *testing.T) {
 	writeTestFile(t, path, "---\nid: half-written-id\n")
 	assertPolls(t, feed)
 
-	// The writer finishes the file in place, which doesn't change the folder's modified time.
+	// The writer finishes the file in place, which doesn't change the folder's modified time. The
+	// feed lists the folder again only because the folder changed less than 2 seconds ago
+	// (markdownRecentFolderWindow), so this test relies on reaching the second poll inside that window.
 	writeEntryFile(t, store, entry, "half-written.md")
 
 	assertPolls(t, feed, entry.ID)
