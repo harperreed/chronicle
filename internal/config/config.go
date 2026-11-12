@@ -58,6 +58,34 @@ func (c *Config) OpenStorage() (storage.Storage, error) {
 	}
 }
 
+// OpenReader opens the configured backend for reading only. Unlike OpenStorage it creates no
+// folder, file or database and runs no migration, so it is safe to aim at a data directory that
+// another process writes to. It fails when the SQLite database doesn't exist, and a markdown
+// data directory that doesn't exist reads as empty.
+func (c *Config) OpenReader() (storage.Reader, error) {
+	backend := c.GetBackend()
+	dataDir := c.GetDataDir()
+
+	switch backend {
+	case "sqlite":
+		reader, err := storage.OpenSqliteReader(DefaultDBPath(dataDir))
+		if err != nil {
+			// Returning the call's results directly would wrap a nil *SqliteStore in a non-nil
+			// Reader.
+			return nil, err
+		}
+		return reader, nil
+	case "markdown":
+		reader, err := storage.OpenMarkdownReader(dataDir)
+		if err != nil {
+			return nil, err
+		}
+		return reader, nil
+	default:
+		return nil, fmt.Errorf("unknown backend: %q", backend)
+	}
+}
+
 // defaultDBFilename is the SQLite database filename used for existing-user detection.
 const defaultDBFilename = "chronicle.db"
 

@@ -47,6 +47,17 @@ func NewMarkdownStore(dataDir string) (*MarkdownStore, error) {
 	}, nil
 }
 
+// OpenMarkdownReader opens the markdown store rooted at dataDir for reading. It does what
+// NewMarkdownStore does except create the data directory, so a directory that doesn't exist
+// yet reads as an empty store. Nothing stops the returned store from writing, so callers that
+// must not write hold it as a Reader.
+func OpenMarkdownReader(dataDir string) (*MarkdownStore, error) {
+	return &MarkdownStore{
+		dataDir:      dataDir,
+		lastModified: time.Now(),
+	}, nil
+}
+
 // Close releases resources. For MarkdownStore this is a no-op.
 func (s *MarkdownStore) Close() error {
 	return nil

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,10 @@ const (
 	sqliteBusyTimeout     = 15 * time.Second
 	sqliteTimestampFormat = "2006-01-02 15:04:05.999999999 -0700 MST"
 )
+
+// sqliteTimestampInstantKeyColumns are the entries columns that hold a timestamp as a sortable
+// instant. Chronicle 1.8.1 added them, and every date filter and ordering reads them.
+var sqliteTimestampInstantKeyColumns = []string{"timestamp_unix_seconds", "timestamp_nanosecond"}
 
 // Entry represents a chronicle log entry.
 type Entry struct {
@@ -122,6 +127,68 @@ func sqliteDataSourceName(dbPath string) string {
 	)
 }
 
+// OpenSqliteReader opens the existing database at dbPath for reading only. Unlike
+// NewSqliteStore it creates no folder and no database file, sets neither journal_mode nor
+// foreign_keys and runs no migration, so it never opens a write transaction. SQLite itself
+// refuses every write on the connection. The returned store still has the write methods, which
+// fail with a readonly error, so callers that must not write hold it as a Reader.
+//
+// Opening a WAL-mode database, as chronicle writes it, makes SQLite add -wal and -shm files
+// beside it when they are absent, even on a read-only connection. They hold no entries, and a
+// later writer removes them. That needs a folder the reader can write to: in a read-only folder,
+// a database with no -wal and -shm beside it can't be opened.
+func OpenSqliteReader(dbPath string) (*SqliteStore, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("no chronicle database at %s", dbPath)
+		}
+		return nil, fmt.Errorf("inspect database: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", sqliteReadOnlyDataSourceName(dbPath))
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	if err := requireTimestampInstantKeys(db, dbPath); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return &SqliteStore{
+		db:           db,
+		lastModified: time.Now(),
+	}, nil
+}
+
+// sqliteReadOnlyDataSourceName returns the DSN that opens the database at dbPath read-only.
+// modernc passes a DSN that starts with file: to SQLite whole as a URI, so SQLite honors
+// mode=ro, and modernc applies the _pragma parameter itself. The path is escaped because it
+// comes from the user's data directory and can hold characters a URI gives a meaning.
+func sqliteReadOnlyDataSourceName(dbPath string) string {
+	return fmt.Sprintf(
+		"file:%s?mode=ro&_pragma=busy_timeout(%d)",
+		(&url.URL{Path: dbPath}).EscapedPath(),
+		sqliteBusyTimeout.Milliseconds(),
+	)
+}
+
+// requireTimestampInstantKeys fails unless the entries table has the timestamp columns that
+// chronicle 1.8.1 added. The reader queries them and can't add them, because adding them is a
+// migration, which only a writing store runs.
+func requireTimestampInstantKeys(db *sql.DB, dbPath string) error {
+	for _, column := range sqliteTimestampInstantKeyColumns {
+		hasColumn, err := sqliteColumnExists(db, "entries", column)
+		if err != nil {
+			return fmt.Errorf("read schema of %s: %w", dbPath, err)
+		}
+		if !hasColumn {
+			return fmt.Errorf("database at %s predates chronicle 1.8.1; run \"chronicle list\" once to upgrade it", dbPath)
+		}
+	}
+	return nil
+}
+
 // migrate runs database migrations.
 func (s *SqliteStore) migrate() error {
 	schema := `
@@ -190,7 +257,7 @@ func (s *SqliteStore) migrate() error {
 		}
 	}
 
-	for _, column := range []string{"timestamp_unix_seconds", "timestamp_nanosecond"} {
+	for _, column := range sqliteTimestampInstantKeyColumns {
 		hasColumn, err := sqliteColumnExists(tx, "entries", column)
 		if err != nil {
 			return fmt.Errorf("inspect entries schema for %s: %w", column, err)
@@ -247,8 +314,14 @@ func sqliteSchemaObjectExists(tx *sql.Tx, objectType, name string) (bool, error)
 	return exists != 0, err
 }
 
-func sqliteColumnExists(tx *sql.Tx, table, column string) (bool, error) {
-	rows, err := tx.Query("PRAGMA table_info(" + table + ")")
+// sqliteQuerier is the part of *sql.DB and *sql.Tx that runs a query, so a schema check works
+// inside a migration's transaction and on a reader's connection alike.
+type sqliteQuerier interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func sqliteColumnExists(db sqliteQuerier, table, column string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
 		return false, err
 	}

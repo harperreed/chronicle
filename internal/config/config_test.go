@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/harper/chronicle/internal/storage"
 )
 
 func TestGetConfigPath(t *testing.T) {
@@ -492,6 +494,100 @@ func TestOpenStorageSqliteCreatesDBInDataDir(t *testing.T) {
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Errorf("expected database file at %s", dbPath)
 	}
+}
+
+// readerEntryIDs opens the config's reader, returns the IDs it lists and closes it.
+func readerEntryIDs(t *testing.T, cfg *Config) []string {
+	t.Helper()
+	reader, err := cfg.OpenReader()
+	if err != nil {
+		t.Fatalf("OpenReader failed: %v", err)
+	}
+	defer reader.Close()
+
+	entries, err := reader.ListEntries(0)
+	if err != nil {
+		t.Fatalf("ListEntries failed: %v", err)
+	}
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		ids = append(ids, entry.ID)
+	}
+	return ids
+}
+
+func TestConfigOpenReader(t *testing.T) {
+	// Every case sets DataDir, so nothing here resolves to the real data or config folders. The
+	// variables are set anyway, so a mistake still can't reach them.
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	for _, backend := range []string{"markdown", "sqlite"} {
+		t.Run(backend+" reads what the writing store stored", func(t *testing.T) {
+			cfg := &Config{Backend: backend, DataDir: filepath.Join(t.TempDir(), "chronicle")}
+			store, err := cfg.OpenStorage()
+			if err != nil {
+				t.Fatalf("OpenStorage failed: %v", err)
+			}
+			id, err := store.CreateEntry(storage.Entry{Message: "stored through the writing store"})
+			if err != nil {
+				t.Fatalf("CreateEntry failed: %v", err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatalf("Close failed: %v", err)
+			}
+
+			ids := readerEntryIDs(t, cfg)
+			if len(ids) != 1 || ids[0] != id {
+				t.Errorf("the reader listed IDs %v, want [%s]", ids, id)
+			}
+		})
+	}
+
+	t.Run("markdown with a missing data dir creates no folder", func(t *testing.T) {
+		dataDir := filepath.Join(t.TempDir(), "missing")
+		cfg := &Config{Backend: "markdown", DataDir: dataDir}
+
+		if ids := readerEntryIDs(t, cfg); len(ids) != 0 {
+			t.Errorf("the reader listed IDs %v, want none", ids)
+		}
+		if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
+			t.Errorf("OpenReader created %s: stat error %v", dataDir, err)
+		}
+	})
+
+	t.Run("sqlite with a missing database reports it", func(t *testing.T) {
+		dataDir := filepath.Join(t.TempDir(), "missing")
+		cfg := &Config{Backend: "sqlite", DataDir: dataDir}
+
+		reader, err := cfg.OpenReader()
+		if err == nil {
+			reader.Close()
+			t.Fatal("OpenReader succeeded on a missing database")
+		}
+		if want := "no chronicle database at " + DefaultDBPath(dataDir); !strings.Contains(err.Error(), want) {
+			t.Errorf("error is %q, want it to contain %q", err, want)
+		}
+		// The reader must be a nil interface: a nil *SqliteStore inside one still compares != nil.
+		if reader != nil {
+			t.Errorf("OpenReader returned %v with its error, want a nil reader", reader)
+		}
+		if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
+			t.Errorf("OpenReader created %s: stat error %v", dataDir, err)
+		}
+	})
+
+	t.Run("unknown backend", func(t *testing.T) {
+		cfg := &Config{Backend: "redis", DataDir: filepath.Join(t.TempDir(), "chronicle")}
+
+		_, err := cfg.OpenReader()
+		if err == nil {
+			t.Fatal("expected error for unknown backend, got nil")
+		}
+		if !strings.Contains(err.Error(), "unknown backend") {
+			t.Errorf("expected 'unknown backend' error, got: %v", err)
+		}
+	})
 }
 
 func TestDefaultDBPath(t *testing.T) {
