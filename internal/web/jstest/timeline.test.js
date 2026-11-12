@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 require('../assets/timeline.js');
-const { insertionIndex, contains, formatTime, addedIds, newMarks } = globalThis.ChronicleTimeline;
+const { parseTime, insertionIndex, contains, formatTime, addedIds, newMarks } = globalThis.ChronicleTimeline;
 
 const entry = (id, timestamp) => ({ id, timestamp });
 
@@ -93,6 +93,79 @@ test('formatTime shows midnight as 00:00:00', () => {
 
 test('formatTime drops fractions of a second', () => {
   assert.equal(formatTime('2026-11-11T22:04:43.987654321Z'), 'Wed Nov 11 · 16:04:43');
+});
+
+// Go writes RFC 3339 times with up to nine fractional digits and cuts trailing zeros, so the
+// length varies. The ECMAScript date format guarantees only three digits, and another engine may
+// refuse any other length with NaN. V8, which runs these tests, accepts them all, so the tests that
+// follow run under a Date that refuses like a strict engine.
+function withStrictDates(run) {
+  const RealDate = Date;
+  const hasFraction = /\.\d/;
+  const hasThreeDigitFraction = /\.\d{3}(?!\d)/;
+  const strictParse = (text) => (hasFraction.test(text) && !hasThreeDigitFraction.test(text) ? NaN : RealDate.parse(text));
+  class StrictDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 1 && typeof args[0] === 'string') super(strictParse(args[0]));
+      else super(...args);
+    }
+
+    static parse(text) {
+      return strictParse(text);
+    }
+  }
+  globalThis.Date = StrictDate;
+  try {
+    run();
+  } finally {
+    globalThis.Date = RealDate;
+  }
+}
+
+// The same instant, 16:04:43 UTC plus the fraction, written in three zones.
+const zones = [
+  { name: 'Z', write: (fraction) => `2026-11-11T16:04:43${fraction}Z` },
+  { name: '-06:00', write: (fraction) => `2026-11-11T10:04:43${fraction}-06:00` },
+  { name: '+05:30', write: (fraction) => `2026-11-11T21:34:43${fraction}+05:30` },
+];
+const fractions = [
+  { digits: 9, text: '.123456789', millis: 123 },
+  { digits: 6, text: '.123456', millis: 123 },
+  { digits: 3, text: '.123', millis: 123 },
+  { digits: 2, text: '.12', millis: 120 },
+  { digits: 1, text: '.5', millis: 500 },
+  { digits: 0, text: '', millis: 0 },
+];
+
+for (const { digits, text, millis } of fractions) {
+  test(`parseTime reads ${digits} fractional digits with Z and with an offset, even where the engine insists on three`, () => {
+    const expected = Date.UTC(2026, 10, 11, 16, 4, 43, millis);
+    withStrictDates(() => {
+      for (const zone of zones) {
+        assert.equal(parseTime(zone.write(text)), expected, zone.write(text));
+      }
+    });
+  });
+}
+
+test('parseTime cuts a long fraction instead of rounding it, so a time never moves into the next second', () => {
+  assert.equal(parseTime('2026-11-11T16:04:43.999999999Z'), Date.UTC(2026, 10, 11, 16, 4, 43, 999));
+});
+
+test('insertionIndex orders times with nine fractional digits where the engine insists on three', () => {
+  const entries = [entry('a', '2026-11-11T16:00:00.900000000Z'), entry('b', '2026-11-11T15:00:00.100000000Z')];
+  withStrictDates(() => {
+    assert.equal(insertionIndex(entries, entry('newest', '2026-11-11T17:00:00.000000001Z')), 0);
+    assert.equal(insertionIndex(entries, entry('between', '2026-11-11T15:30:00.123456789Z')), 1);
+    assert.equal(insertionIndex(entries, entry('oldest', '2026-11-11T08:00:00.987654321-06:00')), 2); // 14:00Z.
+  });
+});
+
+test('formatTime shows a time with nine fractional digits where the engine insists on three', () => {
+  withStrictDates(() => {
+    assert.equal(formatTime('2026-11-11T22:04:43.987654321Z'), 'Wed Nov 11 · 16:04:43');
+    assert.equal(formatTime('2026-11-11T17:04:43.5-05:00'), 'Wed Nov 11 · 16:04:43');
+  });
 });
 
 // The NEW marks. A mark lasts until the page has been visible for 10 seconds. The tests pass the

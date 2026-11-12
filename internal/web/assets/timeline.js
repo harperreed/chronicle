@@ -9,6 +9,14 @@
   // How long a NEW mark lasts, counted while the page is visible.
   const NEW_MARK_MS = 10000;
 
+  // parseTime returns the instant of an RFC 3339 timestamp, as milliseconds since the epoch. Go
+  // writes up to nine fractional digits and none when the fraction is zero, but the ECMAScript date
+  // format guarantees only three, so another engine may return NaN for any other count. The fraction
+  // is cut or padded to three digits first. A cut never rounds, so a time can't move into the next second.
+  function parseTime(timestamp) {
+    return Date.parse(timestamp.replace(/\.(\d+)/, (_, digits) => `.${digits.slice(0, 3).padEnd(3, '0')}`));
+  }
+
   // insertionIndex returns where entry goes in entries, which are sorted newest first: the index of
   // the first entry that is older than it, or entries.length if none is. An entry with the same
   // timestamp as others goes after them, so equal entries keep the order they arrived in.
@@ -16,8 +24,8 @@
   // Timestamps are compared as instants. They carry different UTC offsets, so comparing the
   // strings would put 17:00-06:00 before 22:00Z, although it is an hour later.
   function insertionIndex(entries, entry) {
-    const at = Date.parse(entry.timestamp);
-    const index = entries.findIndex((existing) => Date.parse(existing.timestamp) < at);
+    const at = parseTime(entry.timestamp);
+    const index = entries.findIndex((existing) => parseTime(existing.timestamp) < at);
     return index === -1 ? entries.length : index;
   }
 
@@ -40,8 +48,8 @@
   // formatTime returns a card's time in the viewer's local time zone, as in "Wed Nov 11 · 16:04:43".
   // Names are English and fixed, as the rest of the page is, and the clock has 24 hours.
   function formatTime(timestamp) {
-    const date = new Date(timestamp);
-    const day = `${WEEKDAYS[date.getDay()]} ${MONTHS[date.getMonth()]} ${date.getDate()}`;
+    const date = new Date(parseTime(timestamp));
+    const day =`${WEEKDAYS[date.getDay()]} ${MONTHS[date.getMonth()]} ${date.getDate()}`;
     const clock = [date.getHours(), date.getMinutes(), date.getSeconds()].map(twoDigits).join(':');
     return `${day} · ${clock}`;
   }
@@ -108,5 +116,5 @@
 
   const newMarks = { create: createMarks, has: hasMark, arrive, hide, show, expire, nextExpiry };
 
-  globalThis.ChronicleTimeline = { insertionIndex, contains, formatTime, addedIds, newMarks };
+  globalThis.ChronicleTimeline = { parseTime, insertionIndex, contains, formatTime, addedIds, newMarks };
 })();
