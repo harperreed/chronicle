@@ -1,7 +1,7 @@
 # Live Read-Only View Design
 
 Date: 2026-11-11
-Status: draft, waiting for Harper's approval
+Status: approved by Harper on 2026-11-11 ("yes. let's build"). The approval covers this design and building it on branch `feat/live-view`. Merging, pushing and releasing are not covered.
 
 ## Why
 
