@@ -39,8 +39,13 @@
 }
 
 /* ---- Base ----
-   No smooth scrolling: the live feed moves the scroll position itself when an entry lands above
-   the viewport, and smooth scrolling would animate that move into a visible jump. */
+   No smooth scrolling and no scroll anchoring: the live feed moves the scroll position itself
+   when an entry lands above the viewport. Smooth scrolling would animate that move into a visible
+   jump, and the browser's own anchoring would move the page a second time. */
+html {
+  overflow-anchor: none;
+}
+
 * {
   box-sizing: border-box;
 }

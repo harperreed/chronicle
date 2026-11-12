@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- ABOUTME: The page of Chronicle's web interface. The server marks its html tag with the mode, full or read-only. -->
-<!-- ABOUTME: It holds markup only: app.css styles it, theme.js picks its theme, and app.js fills it from the API. -->
+<!-- ABOUTME: It holds markup only: app.css styles it, theme.js picks its theme, timeline.js orders and times its entries, and app.js fills it. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -9,6 +9,7 @@
   <title>Chronicle</title>
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/app.css">
+  <script src="/timeline.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -71,7 +72,7 @@
             <div><p class="eyebrow">TIMELINE</p><h2 id="timeline-title">Recent activity</h2></div>
             <span id="result-count" class="result-count">Loading…</span>
           </div>
-          <div id="entries" class="entries" aria-live="polite" aria-busy="true"></div>
+          <div id="entries" class="entries" aria-live="off" aria-busy="true"></div>
           <button id="load-more" class="load-more" type="button" hidden>Load more entries</button>
         </section>
       </section>

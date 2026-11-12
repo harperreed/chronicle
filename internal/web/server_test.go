@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -403,6 +404,25 @@ func TestIndexLoadsThemeBeforeStylesheet(t *testing.T) {
 	}
 }
 
+func TestIndexLoadsTimelineBeforeApp(t *testing.T) {
+	page := embeddedAsset(t, "index.html")
+	const timelineScript = `<script src="/timeline.js" defer></script>`
+	const appScript = `<script src="/app.js" defer></script>`
+
+	timelineAt := strings.Index(page, timelineScript)
+	if timelineAt < 0 {
+		t.Fatalf("index.html has no %s", timelineScript)
+	}
+	appAt := strings.Index(page, appScript)
+	if appAt < 0 {
+		t.Fatalf("index.html has no %s", appScript)
+	}
+	// Deferred scripts run in document order, and app.js uses ChronicleTimeline as soon as it starts.
+	if timelineAt > appAt {
+		t.Errorf("index.html loads timeline.js at byte %d, after app.js at byte %d", timelineAt, appAt)
+	}
+}
+
 // localAssetRef matches the src and href attributes of index.html that name a file the server holds.
 var localAssetRef = regexp.MustCompile(`(?:src|href)="(/[^"#?]+)"`)
 
@@ -416,6 +436,45 @@ func TestIndexReferencesServedAssets(t *testing.T) {
 		t.Run(ref[1], func(t *testing.T) {
 			if status, _ := getBody(t, server, ref[1]); status != http.StatusOK {
 				t.Fatalf("GET %s status = %d, want 200", ref[1], status)
+			}
+		})
+	}
+}
+
+// hidesFullOnlyInReadOnly matches a stylesheet rule that hides .full-only on a read-only page. It
+// lets the attribute value carry quotes, as a formatter would write it.
+var hidesFullOnlyInReadOnly = regexp.MustCompile(`:root\[data-mode=["']?read-only["']?\]\s+\.full-only[^{}]*\{[^{}]*display:\s*none`)
+
+// classAttribute matches the class attribute of an opening tag.
+var classAttribute = regexp.MustCompile(`\sclass="([^"]*)"`)
+
+func TestReadOnlyPageHidesWriteControls(t *testing.T) {
+	// The server marks a read-only page (TestIndexMarksMode). Two more things have to hold from
+	// there: the stylesheet hides whatever the markup calls full-only, and the markup calls every
+	// control that writes full-only. If either breaks, a read-only page shows its composer, its
+	// edit dialog or its Edit and Delete buttons.
+	if css := embeddedAsset(t, "app.css"); !hidesFullOnlyInReadOnly.MatchString(css) {
+		t.Error("app.css has no rule that hides .full-only under :root[data-mode=read-only]")
+	}
+
+	page := embeddedAsset(t, "index.html")
+	writeControls := []struct {
+		name string
+		tag  *regexp.Regexp
+	}{
+		{"composer section", regexp.MustCompile(`<section[^>]*\sclass="[^"]*\bcomposer\b[^"]*"[^>]*>`)},
+		{"edit dialog", regexp.MustCompile(`<dialog[^>]*\sid="edit-dialog"[^>]*>`)},
+		{"entry actions", regexp.MustCompile(`<div[^>]*\sclass="[^"]*\bentry-actions\b[^"]*"[^>]*>`)},
+	}
+	for _, control := range writeControls {
+		t.Run(control.name, func(t *testing.T) {
+			tag := control.tag.FindString(page)
+			if tag == "" {
+				t.Fatalf("index.html has no tag that matches %s", control.tag)
+			}
+			classes := classAttribute.FindStringSubmatch(tag)
+			if classes == nil || !slices.Contains(strings.Fields(classes[1]), "full-only") {
+				t.Errorf("%s has no full-only class, so a read-only page would show it", tag)
 			}
 		})
 	}
