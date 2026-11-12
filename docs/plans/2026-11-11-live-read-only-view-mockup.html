@@ -1,0 +1,97 @@
+<!-- ABOUTME: Approved mockup for the live read-only view: layout A in the clean light and dark console styles. -->
+<!-- ABOUTME: Drawn inside the brainstorming tool frame, so opened on its own it renders only roughly. -->
+<style>
+  .q { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.45; padding:0 18px 14px; text-align:left;
+       background:var(--bg); color:var(--ink); }
+  .q-light { --bg:#f8fafc; --surface:#ffffff; --surface2:#f1f5f9; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --accent:#2563eb; --accent-soft:rgba(37,99,235,.08); --live:#16a34a; --chip-ink:#334155; }
+  .q-dark  { --bg:#0b0f14; --surface:#111821; --surface2:#17202b; --ink:#e5edf5; --muted:#8a99ab; --line:#1f2a37; --accent:#4ade80; --accent-soft:rgba(74,222,128,.08); --live:#4ade80; --chip-ink:#c4d0dc; }
+  .q-top { display:flex; align-items:center; justify-content:space-between; height:46px; border-bottom:1px solid var(--line); }
+  .q-word { font:650 14px/1 ui-monospace,"SF Mono",Menlo,monospace; letter-spacing:-.02em; }
+  .q-word em { font-style:normal; color:var(--accent); }
+  .q-right { display:flex; gap:8px; align-items:center; }
+  .q-ro { font-size:7.5px; font-weight:650; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:1px 6px; letter-spacing:.08em; }
+  .q-live { display:flex; align-items:center; gap:5px; font-size:8.5px; font-weight:750; letter-spacing:.1em; color:var(--live); }
+  .q-live i { width:6px; height:6px; border-radius:50%; background:var(--live); box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 22%,transparent); }
+  .q-hero { display:flex; align-items:end; justify-content:space-between; padding:16px 0 12px; }
+  .q-eyebrow { color:var(--accent); font-weight:750; letter-spacing:.14em; font-size:7px; margin:0 0 4px; }
+  .q-h { font-weight:650; font-size:21px; line-height:1.05; letter-spacing:-.025em; margin:0; }
+  .q-metric { text-align:right; }
+  .q-metric b { display:block; font:600 17px/1 ui-monospace,"SF Mono",Menlo,monospace; letter-spacing:-.02em; }
+  .q-metric span { font-size:7px; color:var(--muted); }
+  .q-ws { display:grid; grid-template-columns:118px 1fr; gap:16px; }
+  .q-filters { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:9px; align-self:start; }
+  .q-flabel { font-size:6.5px; text-transform:uppercase; letter-spacing:.09em; font-weight:750; color:var(--muted); margin:6px 0 3px; }
+  .q-input { display:block; border:1px solid var(--line); background:var(--bg); border-radius:5px; font-size:8px; padding:3px 6px; color:var(--muted); margin-bottom:3px; }
+  .q-chips { display:flex; flex-wrap:wrap; gap:3px; }
+  .q-chip { font-size:7px; border:1px solid var(--line); background:var(--surface2); color:var(--chip-ink); border-radius:4px; padding:1px 5px; }
+  .q-entry { display:grid; grid-template-columns:12px 1fr; gap:7px; }
+  .q-rail { position:relative; }
+  .q-rail::after { content:""; position:absolute; top:15px; bottom:-1px; left:3px; width:1px; background:var(--line); }
+  .q-rail span { position:absolute; top:13px; left:0; width:5px; height:5px; border:1.5px solid var(--muted); background:var(--bg); border-radius:50%; z-index:1; }
+  .q-new .q-rail span { border-color:var(--accent); background:var(--accent); }
+  .q-body { padding:9px 6px 9px 6px; border-bottom:1px solid var(--line); }
+  .q-new .q-body { background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); border-radius:2px; }
+  .q-time { font:500 7.5px ui-monospace,"SF Mono",Menlo,monospace; color:var(--muted); }
+  .q-pill { font:800 6.5px Inter,system-ui,sans-serif; letter-spacing:.1em; color:var(--bg); background:var(--accent); border-radius:3px; padding:1px 4px; margin-left:5px; }
+  .q-msg { font-weight:550; font-size:12.5px; line-height:1.35; margin:3px 0 5px; letter-spacing:-.005em; }
+  .q-tags { display:flex; gap:3px; flex-wrap:wrap; margin-bottom:3px; }
+  .q-tag { font-size:7.5px; color:var(--chip-ink); background:var(--surface2); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
+  .q-ctx { font:7px ui-monospace,"SF Mono",Menlo,monospace; color:var(--muted); }
+</style>
+
+<h2>Which style for layout A?</h2>
+<p class="subtitle">Same layout you picked, minus the Claude look: no cream, no serif, no coral, no "C" tile. Whichever you pick, the theme button still switches between a light and a dark version of it. All entries below are made up.</p>
+
+<div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); align-items:start;">
+
+  <div class="card" data-choice="clean-light" onclick="toggleSelect(this)">
+    <div class="q q-light">
+      <div class="q-top"><span class="q-word">chronicle<em>_</em></span><span class="q-right"><span class="q-ro">READ ONLY</span><span class="q-live"><i></i>LIVE</span></span></div>
+      <div class="q-hero"><div><p class="q-eyebrow">LIVE FEED</p><h4 class="q-h">Agent activity</h4></div><div class="q-metric"><b>4,420</b><span>entries recorded</span></div></div>
+      <div class="q-ws">
+        <div class="q-filters">
+          <div class="q-flabel" style="margin-top:0">Search</div><span class="q-input">Search your history…</span>
+          <div class="q-flabel">Date range</div><span class="q-input">From</span><span class="q-input">To</span>
+          <div class="q-flabel">Popular tags</div>
+          <div class="q-chips"><span class="q-chip">kata</span><span class="q-chip">spaceport</span><span class="q-chip">tanglednet</span><span class="q-chip">deploy</span><span class="q-chip">tests</span></div>
+        </div>
+        <div>
+          <div class="q-entry q-new"><div class="q-rail"><span></span></div><div class="q-body"><div class="q-time">Wed Nov 11 · 16:04:43<span class="q-pill">NEW</span></div><div class="q-msg">started spaceport kata backlog work</div><div class="q-tags"><span class="q-tag">#spaceport</span><span class="q-tag">#kata</span></div><div class="q-ctx">harper@disaster · ~/Public/src/2389/spaceport</div></div></div>
+          <div class="q-entry"><div class="q-rail"><span></span></div><div class="q-body"><div class="q-time">Wed Nov 11 · 16:02:10</div><div class="q-msg">tanglednet identity plan 1b merged, suite green</div><div class="q-tags"><span class="q-tag">#tanglednet</span><span class="q-tag">#release</span></div><div class="q-ctx">harper@disaster · ~/Public/src/tanglednet</div></div></div>
+          <div class="q-entry"><div class="q-rail"><span></span></div><div class="q-body"><div class="q-time">Wed Nov 11 · 15:58:37</div><div class="q-msg">fixed flaky migration test in footwork</div><div class="q-tags"><span class="q-tag">#footwork</span><span class="q-tag">#tests</span></div><div class="q-ctx">harper@disaster · ~/Public/src/footwork</div></div></div>
+          <div class="q-entry"><div class="q-rail"><span></span></div><div class="q-body" style="border-bottom:0"><div class="q-time">Wed Nov 11 · 15:51:02</div><div class="q-msg">pressure-cooker redeployed on harper-box</div><div class="q-tags"><span class="q-tag">#pressure-cooker</span><span class="q-tag">#deploy</span></div><div class="q-ctx">harper@disaster · ~/Public/src/pressure-cooker</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>1. Clean light</h3>
+      <p>White and cool grays with one blue accent. Sans-serif messages, monospace times and paths.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="dark-console" onclick="toggleSelect(this)">
+    <div class="q q-dark">
+      <div class="q-top"><span class="q-word">chronicle<em>_</em></span><span class="q-right"><span class="q-ro">READ ONLY</span><span class="q-live"><i></i>LIVE</span></span></div>
+      <div class="q-hero"><div><p class="q-eyebrow">LIVE FEED</p><h4 class="q-h">Agent activity</h4></div><div class="q-metric"><b>4,420</b><span>entries recorded</span></div></div>
+      <div class="q-ws">
+        <div class="q-filters">
+          <div class="q-flabel" style="margin-top:0">Search</div><span class="q-input">Search your history…</span>
+          <div class="q-flabel">Date range</div><span class="q-input">From</span><span class="q-input">To</span>
+          <div class="q-flabel">Popular tags</div>
+          <div class="q-chips"><span class="q-chip">kata</span><span class="q-chip">spaceport</span><span class="q-chip">tanglednet</span><span class="q-chip">deploy</span><span class="q-chip">tests</span></div>
+        </div>
+        <div>
+          <div class="q-entry q-new"><div class="q-rail"><span></span></div><div class="q-body"><div class="q-time">Wed Nov 11 · 16:04:43<span class="q-pill">NEW</span></div><div class="q-msg">started spaceport kata backlog work</div><div class="q-tags"><span class="q-tag">#spaceport</span><span class="q-tag">#kata</span></div><div class="q-ctx">harper@disaster · ~/Public/src/2389/spaceport</div></div></div>
+          <div class="q-entry"><div class="q-rail"><span></span></div><div class="q-body"><div class="q-time">Wed Nov 11 · 16:02:10</div><div class="q-msg">tanglednet identity plan 1b merged, suite green</div><div class="q-tags"><span class="q-tag">#tanglednet</span><span class="q-tag">#release</span></div><div class="q-ctx">harper@disaster · ~/Public/src/tanglednet</div></div></div>
+          <div class="q-entry"><div class="q-rail"><span></span></div><div class="q-body"><div class="q-time">Wed Nov 11 · 15:58:37</div><div class="q-msg">fixed flaky migration test in footwork</div><div class="q-tags"><span class="q-tag">#footwork</span><span class="q-tag">#tests</span></div><div class="q-ctx">harper@disaster · ~/Public/src/footwork</div></div></div>
+          <div class="q-entry"><div class="q-rail"><span></span></div><div class="q-body" style="border-bottom:0"><div class="q-time">Wed Nov 11 · 15:51:02</div><div class="q-msg">pressure-cooker redeployed on harper-box</div><div class="q-tags"><span class="q-tag">#pressure-cooker</span><span class="q-tag">#deploy</span></div><div class="q-ctx">harper@disaster · ~/Public/src/pressure-cooker</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>2. Dark console</h3>
+      <p>Near-black with one green accent, built for a second screen that stays on all day. Same type as option 1.</p>
+    </div>
+  </div>
+
+</div>
