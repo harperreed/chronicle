@@ -15,25 +15,47 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/harper/chronicle/internal/storage"
 )
 
-const maxBodySize = 1 << 20
+const (
+	maxBodySize = 1 << 20
+
+	// defaultPollInterval is how often a stream checks the store for new entries.
+	defaultPollInterval = time.Second
+)
+
+// Errors for the since and until query parameters. Their text is the message the API returns.
+var (
+	errInvalidSince = errors.New("invalid since date")
+	errInvalidUntil = errors.New("invalid until date")
+)
 
 // Server serves Chronicle's web application and API.
 type Server struct {
-	store       storage.Storage
-	app         http.Handler
-	allowRemote bool
+	store        storage.Storage
+	app          http.Handler
+	allowRemote  bool
+	pollInterval time.Duration
+
+	// streamsDone is closed by StopStreams to end every open stream. streamsStop makes closing
+	// it safe to repeat.
+	streamsDone chan struct{}
+	streamsStop sync.Once
 }
 
-// Options controls web server security behavior.
+// Options controls web server behavior.
 type Options struct {
 	// AllowRemote permits non-loopback Host headers. Keep this false unless an
 	// authenticated reverse proxy protects Chronicle.
 	AllowRemote bool
+
+	// PollInterval is how often a stream checks the store for new entries. Zero, or less,
+	// means one second.
+	PollInterval time.Duration
 }
 
 // New creates a web server backed by store. By default, only loopback requests
@@ -47,7 +69,16 @@ func New(store storage.Storage, options ...Options) (*Server, error) {
 	if len(options) > 0 {
 		settings = options[0]
 	}
-	s := &Server{store: store, app: http.FileServer(http.FS(assets)), allowRemote: settings.AllowRemote}
+	if settings.PollInterval <= 0 {
+		settings.PollInterval = defaultPollInterval
+	}
+	s := &Server{
+		store:        store,
+		app:          http.FileServer(http.FS(assets)),
+		allowRemote:  settings.AllowRemote,
+		pollInterval: settings.PollInterval,
+		streamsDone:  make(chan struct{}),
+	}
 	return s, nil
 }
 
@@ -61,8 +92,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/entries/{id}", s.updateEntry)
 	mux.HandleFunc("DELETE /api/entries/{id}", s.deleteEntry)
 	mux.HandleFunc("GET /api/stats", s.stats)
+	mux.HandleFunc("GET /api/stream", s.streamEntries)
 	mux.Handle("GET /", s.app)
 	return securityHeaders(mux, s.allowRemote)
+}
+
+// StopStreams ends every open stream. It is safe to call more than once. Streams never end on
+// their own, and http.Server.Shutdown waits for open requests, so a server that shuts down
+// gracefully must call it, for example through RegisterOnShutdown.
+func (s *Server) StopStreams() {
+	s.streamsStop.Do(func() { close(s.streamsDone) })
 }
 
 type entryInput struct {
@@ -89,21 +128,10 @@ func (s *Server) listEntries(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	filter := &storage.SearchFilter{Text: strings.TrimSpace(r.URL.Query().Get("q")), Tags: queryTags(r)}
-	var err error
-	if value := r.URL.Query().Get("since"); value != "" {
-		filter.Since, err = parseDate(value, false)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid since date")
-			return
-		}
-	}
-	if value := r.URL.Query().Get("until"); value != "" {
-		filter.Until, err = parseDate(value, true)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid until date")
-			return
-		}
+	filter, err := filterFromQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	entries, err := s.store.SearchEntries(filter, limit)
 	if err != nil {
@@ -258,6 +286,27 @@ func normalizeTags(values []string) []string {
 		}
 	}
 	return tags
+}
+
+// filterFromQuery builds the search filter that the q, tag, since and until query parameters
+// describe. The message of the error it returns is safe to show the client.
+func filterFromQuery(r *http.Request) (*storage.SearchFilter, error) {
+	query := r.URL.Query()
+	filter := &storage.SearchFilter{Text: strings.TrimSpace(query.Get("q")), Tags: queryTags(r)}
+	var err error
+	if value := query.Get("since"); value != "" {
+		filter.Since, err = parseDate(value, false)
+		if err != nil {
+			return nil, errInvalidSince
+		}
+	}
+	if value := query.Get("until"); value != "" {
+		filter.Until, err = parseDate(value, true)
+		if err != nil {
+			return nil, errInvalidUntil
+		}
+	}
+	return filter, nil
 }
 
 func queryTags(r *http.Request) []string {
