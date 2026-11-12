@@ -95,7 +95,7 @@ chronicle tail --tag work -t go   # Entries tagged work or go
           ~/Public/src/2389/spaceport
 ```
 
-Times are local. An entry from an earlier day also shows its date, as in `Nov 10 16:04:43`, and one from an earlier year shows the year too. The second line is the working directory, with your home folder shortened to `~`. A message of several lines keeps its later lines indented under the first. Control characters in an entry, other than tabs and line breaks, show as escapes (`\x1b` for the escape character), so the text of an entry can't send commands to your terminal. Colors turn off when output is not a terminal or `NO_COLOR` is set.
+Times are local. An entry from an earlier day also shows its date, as in `Nov 10 16:04:43`, and one from an earlier year shows the year too. The last line is the working directory, if the entry has one, with your home folder shortened to `~`. A message of several lines keeps its later lines indented under the first. Control characters in an entry, other than tabs and line breaks, show as escapes (`\x1b` for the escape character), so the text of an entry can't send commands to your terminal. Colors turn off when output is not a terminal or `NO_COLOR` is set.
 
 A quick-add message can't start with a subcommand name, because `chronicle tail ...` runs the command. To log a message that starts with `tail`, use `chronicle add "tail ..."`.
 
