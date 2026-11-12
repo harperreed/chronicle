@@ -170,27 +170,41 @@ jobs:
           if ! cd tap; then
             exit 1
           fi
-          mkdir -p Casks
+          mkdir -p Formula
+          # Publish a formula, never a cask: Homebrew quarantines cask downloads, and macOS holds
+          # the quarantined, unnotarized binary at launch. Drop any cask so its users can't stay on
+          # an old quarantined build.
+          git rm -f --ignore-unmatch Casks/chronicle.rb
 
-          cat > Casks/chronicle.rb << EOF
-          cask "chronicle" do
-            arch arm: "arm64", intel: "amd64"
-
-            version "$VERSION"
-            sha256 arm:   "$ARM_SHA256",
-                   intel: "$INTEL_SHA256"
-
-            url "https://github.com/harperreed/chronicle/releases/download/v#{version}/chronicle-darwin-#{arch}.tar.gz"
-            name "Chronicle"
+          cat > Formula/chronicle.rb << EOF
+          class Chronicle < Formula
             desc "Timestamped logging tool with SQLite and optional project log files"
             homepage "https://github.com/harperreed/chronicle"
+            version "$VERSION"
+            license "MIT"
 
-            binary "chronicle-darwin-#{arch}", target: "chronicle"
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/harperreed/chronicle/releases/download/v$VERSION/chronicle-darwin-arm64.tar.gz"
+                sha256 "$ARM_SHA256"
+              else
+                url "https://github.com/harperreed/chronicle/releases/download/v$VERSION/chronicle-darwin-amd64.tar.gz"
+                sha256 "$INTEL_SHA256"
+              end
+            end
+
+            def install
+              bin.install Dir["chronicle-*"].first => "chronicle"
+            end
+
+            test do
+              system "#{bin}/chronicle", "--help"
+            end
           end
           EOF
 
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add Casks/chronicle.rb
+          git add Formula/chronicle.rb
           git commit -m "Update chronicle to $VERSION"
           git push

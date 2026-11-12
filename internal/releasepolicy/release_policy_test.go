@@ -1,5 +1,5 @@
 // ABOUTME: Enforces the security and publication contract of Chronicle's release configuration.
-// ABOUTME: Keeps tag handling, workflow permissions, and Homebrew Cask publishing fail closed.
+// ABOUTME: Keeps tag handling, workflow permissions, and Homebrew formula publishing fail closed.
 
 package releasepolicy
 
@@ -157,7 +157,10 @@ func TestReleaseWorkflowValidatesInputsBeforePublishing(t *testing.T) {
 	}
 }
 
-func TestTapPublicationIsFailClosedAndCaskOnly(t *testing.T) {
+// The tap publishes a formula, not a cask: Homebrew quarantines cask downloads, and macOS holds
+// the quarantined, unnotarized binary at launch, so every chronicle command hangs. Formula
+// installs are not quarantined.
+func TestTapPublicationIsFailClosedAndFormulaOnly(t *testing.T) {
 	workflow := loadYAML(t, ".github/workflows/release.yml")
 	releaseJob := mapping(t, mapping(t, workflow, "jobs"), "release")
 	steps := sequence(t, releaseJob, "steps")
@@ -174,14 +177,24 @@ func TestTapPublicationIsFailClosedAndCaskOnly(t *testing.T) {
 	}
 
 	run := optionalScalar(tapStep, "run")
-	for _, forbidden := range []string{"Formula/", "< Formula", "||", "Push failed", "No changes to commit"} {
+	for _, forbidden := range []string{`cask "chronicle"`, "||", "Push failed", "No changes to commit"} {
 		if strings.Contains(run, forbidden) {
-			t.Errorf("tap publication contains fail-open or Formula behavior %q", forbidden)
+			t.Errorf("tap publication contains fail-open or Cask behavior %q", forbidden)
 		}
 	}
-	for _, required := range []string{`Casks/chronicle.rb`, `: "${HOMEBREW_TAP_TOKEN:?`, `git commit`, `git push`} {
-		if !strings.Contains(run, required) {
-			t.Errorf("tap publication is missing required fail-closed Cask behavior %q", required)
+	required := []string{
+		`Formula/chronicle.rb`,
+		`class Chronicle < Formula`,
+		`bin.install`,
+		// A stale cask left in the tap would keep cask users on an old, quarantined binary.
+		`git rm -f --ignore-unmatch Casks/chronicle.rb`,
+		`: "${HOMEBREW_TAP_TOKEN:?`,
+		`git commit`,
+		`git push`,
+	}
+	for _, want := range required {
+		if !strings.Contains(run, want) {
+			t.Errorf("tap publication is missing required fail-closed formula behavior %q", want)
 		}
 	}
 	if optionalScalar(tapStep, "if") != "" {
@@ -189,13 +202,13 @@ func TestTapPublicationIsFailClosedAndCaskOnly(t *testing.T) {
 	}
 }
 
-func TestGoReleaserPublishesOnlyHomebrewCasks(t *testing.T) {
+// The Release workflow is the one tap publisher, so GoReleaser publishes nothing to Homebrew.
+func TestGoReleaserDoesNotPublishToTheTap(t *testing.T) {
 	config := loadYAML(t, ".goreleaser.yml")
-	if _, ok := config["brews"]; ok {
-		t.Error("GoReleaser must not publish Homebrew Formulae")
-	}
-	if _, ok := config["homebrew_casks"]; !ok {
-		t.Error("GoReleaser must publish a Homebrew Cask")
+	for _, key := range []string{"brews", "homebrew_casks"} {
+		if _, ok := config[key]; ok {
+			t.Errorf("GoReleaser must not publish to the Homebrew tap, found %q", key)
+		}
 	}
 }
 
