@@ -1,5 +1,5 @@
-// ABOUTME: Tests for the page's timeline helpers: where a streamed entry goes, whether a list holds it, and how a card shows its time.
-// ABOUTME: Runs under Node's test runner against plain objects, so it needs no browser.
+// ABOUTME: Tests for the page's timeline helpers: where a streamed entry goes, how a card shows its time, and how long a NEW mark lasts.
+// ABOUTME: Runs under Node's test runner against plain objects and a clock that each test passes in, so it needs no browser.
 'use strict';
 
 // A card shows local time, so fix the zone before any date is built. Chicago is on standard time
@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 require('../assets/timeline.js');
-const { insertionIndex, contains, formatTime } = globalThis.ChronicleTimeline;
+const { insertionIndex, contains, formatTime, addedIds, newMarks } = globalThis.ChronicleTimeline;
 
 const entry = (id, timestamp) => ({ id, timestamp });
 
@@ -93,4 +93,140 @@ test('formatTime shows midnight as 00:00:00', () => {
 
 test('formatTime drops fractions of a second', () => {
   assert.equal(formatTime('2026-11-11T22:04:43.987654321Z'), 'Wed Nov 11 · 16:04:43');
+});
+
+// The NEW marks. A mark lasts until the page has been visible for 10 seconds. The tests pass the
+// time in as milliseconds, so they run on a clock that only moves when they say so.
+const aSecond = 1000;
+const anHour = 3600 * aSecond;
+
+test('a mark on a visible page lasts 10 seconds from the arrival', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 1 * aSecond);
+  assert.equal(newMarks.has(marks, 'a'), true);
+  assert.equal(newMarks.nextExpiry(marks), 11 * aSecond);
+  assert.deepEqual(newMarks.expire(marks, 11 * aSecond - 1), []);
+  assert.equal(newMarks.has(marks, 'a'), true);
+  assert.deepEqual(newMarks.expire(marks, 11 * aSecond), ['a']);
+  assert.equal(newMarks.has(marks, 'a'), false);
+  assert.equal(newMarks.nextExpiry(marks), null);
+});
+
+test('marks run out each on its own deadline', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.arrive(marks, 'b', 4 * aSecond);
+  assert.equal(newMarks.nextExpiry(marks), 10 * aSecond);
+  assert.deepEqual(newMarks.expire(marks, 10 * aSecond), ['a']);
+  assert.equal(newMarks.nextExpiry(marks), 14 * aSecond);
+  assert.deepEqual(newMarks.expire(marks, 14 * aSecond), ['b']);
+});
+
+test('a mark that arrives on a hidden page waits, however long the page stays hidden', () => {
+  const marks = newMarks.create(false);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.arrive(marks, 'b', 5 * aSecond);
+  assert.equal(newMarks.nextExpiry(marks), null);
+  assert.deepEqual(newMarks.expire(marks, anHour), []);
+  assert.equal(newMarks.has(marks, 'a'), true);
+  assert.equal(newMarks.has(marks, 'b'), true);
+
+  newMarks.show(marks, anHour);
+  assert.equal(newMarks.nextExpiry(marks), anHour + 10 * aSecond);
+  assert.deepEqual(newMarks.expire(marks, anHour + 10 * aSecond - 1), []);
+  assert.deepEqual(newMarks.expire(marks, anHour + 10 * aSecond), ['a', 'b']);
+});
+
+test('hiding at 2 seconds and showing at 9 clears the mark at 19 seconds, not at 10', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.hide(marks); // The page goes to the background at 2 seconds.
+  assert.equal(newMarks.nextExpiry(marks), null);
+  newMarks.show(marks, 9 * aSecond);
+
+  // At 10 seconds the mark has been seen for 1 second since the page came back, so it stays.
+  assert.deepEqual(newMarks.expire(marks, 10 * aSecond), []);
+  assert.equal(newMarks.has(marks, 'a'), true);
+  assert.equal(newMarks.nextExpiry(marks), 19 * aSecond);
+  assert.deepEqual(newMarks.expire(marks, 19 * aSecond - 1), []);
+  assert.deepEqual(newMarks.expire(marks, 19 * aSecond), ['a']);
+});
+
+test('a mark does not run out while the page is hidden', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.hide(marks);
+  assert.deepEqual(newMarks.expire(marks, anHour), []);
+  assert.equal(newMarks.has(marks, 'a'), true);
+});
+
+test('showing a page that is already visible does not extend a running mark', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.show(marks, 5 * aSecond);
+  assert.equal(newMarks.nextExpiry(marks), 10 * aSecond);
+});
+
+test('hiding twice and showing twice give a waiting mark one 10-second run', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.hide(marks);
+  newMarks.hide(marks);
+  newMarks.show(marks, 20 * aSecond);
+  newMarks.show(marks, 25 * aSecond);
+  assert.equal(newMarks.nextExpiry(marks), 30 * aSecond);
+});
+
+test('a mark that arrives again keeps its first deadline', () => {
+  const marks = newMarks.create(true);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.arrive(marks, 'a', 6 * aSecond);
+  assert.equal(newMarks.nextExpiry(marks), 10 * aSecond);
+});
+
+test('nextExpiry of a page with no marks is null', () => {
+  assert.equal(newMarks.nextExpiry(newMarks.create(true)), null);
+  assert.equal(newMarks.nextExpiry(newMarks.create(false)), null);
+});
+
+test('addedIds returns the ids that the new list has and the old one lacks, in the new list order', () => {
+  const previous = [entry('b', '2026-11-11T16:00:00Z'), entry('a', '2026-11-11T15:00:00Z')];
+  const next = [
+    entry('d', '2026-11-11T18:00:00Z'),
+    entry('c', '2026-11-11T17:00:00Z'),
+    entry('b', '2026-11-11T16:00:00Z'),
+    entry('a', '2026-11-11T15:00:00Z'),
+  ];
+  assert.deepEqual(addedIds(previous, next), ['d', 'c']);
+});
+
+test('addedIds returns every id of the new list when the old list is empty, and none when the new one is', () => {
+  const entries = [entry('b', '2026-11-11T16:00:00Z'), entry('a', '2026-11-11T15:00:00Z')];
+  assert.deepEqual(addedIds([], entries), ['b', 'a']);
+  assert.deepEqual(addedIds(entries, []), []);
+});
+
+test('addedIds ignores an entry that only changed place', () => {
+  const previous = [entry('a', '2026-11-11T16:00:00Z'), entry('b', '2026-11-11T15:00:00Z')];
+  const next = [entry('b', '2026-11-11T15:00:00Z'), entry('a', '2026-11-11T16:00:00Z')];
+  assert.deepEqual(addedIds(previous, next), []);
+});
+
+test('a reload keeps the marks nobody has seen and adds marks for the entries it brings in', () => {
+  // The page is in a background tab, and two entries stream in.
+  const marks = newMarks.create(false);
+  newMarks.arrive(marks, 'a', 0);
+  newMarks.arrive(marks, 'b', 1 * aSecond);
+
+  // The connection drops and comes back. The reload holds one more entry, written during the outage.
+  const before = [entry('b', '2026-11-11T16:01:00Z'), entry('a', '2026-11-11T16:00:00Z'), entry('old', '2026-11-11T15:00:00Z')];
+  const after = [entry('c', '2026-11-11T16:02:00Z'), ...before];
+  addedIds(before, after).forEach((id) => newMarks.arrive(marks, id, 60 * aSecond));
+  for (const id of ['a', 'b', 'c']) assert.equal(newMarks.has(marks, id), true, `${id} is marked`);
+  assert.equal(newMarks.has(marks, 'old'), false);
+
+  // The reader comes back, and all three run for 10 seconds from then.
+  newMarks.show(marks, 90 * aSecond);
+  assert.deepEqual(newMarks.expire(marks, 100 * aSecond - 1), []);
+  assert.deepEqual(newMarks.expire(marks, 100 * aSecond), ['a', 'b', 'c']);
 });

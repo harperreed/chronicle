@@ -10,7 +10,10 @@
     more: false, // The last list was full, so the server may hold more entries.
     total: null, // The entry count from /api/stats, or null while it is unknown.
     loading: false, // A list request is in flight.
-    waiting: [] // Entries that the stream delivered during that request.
+    waiting: [], // Entries that the stream delivered during that request.
+    marks: ChronicleTimeline.newMarks.create(document.visibilityState === 'visible'), // The entries that carry a NEW mark.
+    listedFilters: null, // The query that the list on the page was loaded with, or null when the last load failed.
+    afterGap: false // The stream came back after a gap, so the next list for the same filters marks the entries it adds.
   };
   const els = {
     form: $('#entry-form'), message: $('#message'), tags: $('#tags'), entries: $('#entries'), search: $('#search'),
@@ -44,6 +47,9 @@
     return params;
   }
 
+  // filtersActive says whether a filter narrows the list. The stream then carries only the entries that match.
+  function filtersActive() { return filterParams().toString() !== ''; }
+
   // loadEntries shows the first page of entries that match the filters. The latest call wins: when a
   // call overtakes one that still waits, the older response is dropped, so a stale list never
   // replaces a newer one, and a call made after the stream's ready always gets its own request.
@@ -52,15 +58,19 @@
     const load = ++latestLoad;
     state.loading = true; els.entries.setAttribute('aria-busy', 'true');
     if (!state.entries.length) els.entries.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
-    const params = filterParams(); params.set('limit', String(state.limit));
+    const params = filterParams(); const query = params.toString(); params.set('limit', String(state.limit));
     try {
       const data = await api(`/api/entries?${params}`);
       if (load !== latestLoad) return;
+      // After a gap, the entries that this list adds are the ones the page missed. Only a list for the
+      // same filters can say so: a list for other filters differs from the old one in every entry.
+      if (state.afterGap && state.listedFilters === query) markNew(ChronicleTimeline.addedIds(state.entries, data.entries));
+      state.afterGap = false; state.listedFilters = query;
       state.entries = data.entries; state.more = data.count >= state.limit; showEntries(); showResultCount();
       els.more.hidden = !state.more || state.limit >= 500;
     } catch (error) {
       if (load !== latestLoad) return;
-      state.entries = [];
+      state.listedFilters = null; state.entries = [];
       els.entries.innerHTML = `<div class="empty"><span>!</span><h3>Couldn't load entries</h3><p>${escapeText(error.message)}</p></div>`;
       toast(error.message, true);
     } finally {
@@ -79,7 +89,7 @@
   function renderEntries() {
     els.entries.replaceChildren();
     if (!state.entries.length) {
-      const filtered = els.search.value || els.since.value || els.until.value || state.selectedTags.size;
+      const filtered = filtersActive();
       // A read-only page has no composer to point to.
       const hint = filtered ? 'Try broadening your filters.' : readOnly ? 'New entries appear here as they are written.' : 'Record your first entry above.';
       els.entries.innerHTML = `<div class="empty"><span>✦</span><h3>${filtered ? 'No matching moments' : 'Your chronicle starts here'}</h3><p>${hint}</p></div>`;
@@ -103,6 +113,7 @@
   // only, so a message that holds markup shows as plain text.
   function buildCard(entry) {
     const card = $('#entry-template').content.cloneNode(true).querySelector('.entry-card'); card.dataset.id = entry.id;
+    if (ChronicleTimeline.newMarks.has(state.marks, entry.id)) card.dataset.new = ''; // The card shows the mark. state.marks owns it.
     const time = card.querySelector('time');
     time.dateTime = entry.timestamp; time.textContent = ChronicleTimeline.formatTime(entry.timestamp);
     card.querySelector('.entry-message').textContent = entry.message;
@@ -127,20 +138,28 @@
     });
   }
 
-  // A NEW mark lasts 10 seconds of the page being visible. The mark of an entry that arrives while
-  // the page is hidden waits in unseen, and its 10 seconds start when the page shows again.
-  const NEW_MARK_MS = 10000;
-  const unseen = new Set();
-  function expireNewMark(card) {
-    if (document.visibilityState !== 'visible') { unseen.add(card); return; }
-    setTimeout(() => {
-      // The page may have been hidden since, and then the reader has not had the full time.
-      if (document.visibilityState === 'visible') delete card.dataset.new; else unseen.add(card);
-    }, NEW_MARK_MS);
+  // The NEW marks are state (state.marks, with the rules in timeline.js), and a card only shows its
+  // mark, so drawing the list again keeps every mark. What is left here is the wiring: one timer
+  // for the next mark to run out, and the page's visibility, which holds the marks while it is hidden.
+  let marksTimer = 0;
+  function markNew(ids) {
+    ids.forEach(id => ChronicleTimeline.newMarks.arrive(state.marks, id, performance.now()));
+    scheduleSweep();
+  }
+  function scheduleSweep() {
+    clearTimeout(marksTimer);
+    const next = ChronicleTimeline.newMarks.nextExpiry(state.marks);
+    if (next !== null) marksTimer = setTimeout(sweepMarks, Math.max(0, next - performance.now()));
+  }
+  function sweepMarks() {
+    const expired = new Set(ChronicleTimeline.newMarks.expire(state.marks, performance.now()));
+    for (const card of els.entries.children) if (expired.has(card.dataset.id)) delete card.dataset.new;
+    scheduleSweep();
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    unseen.forEach(expireNewMark); unseen.clear();
+    if (document.visibilityState === 'visible') ChronicleTimeline.newMarks.show(state.marks, performance.now());
+    else ChronicleTimeline.newMarks.hide(state.marks);
+    scheduleSweep();
   });
 
   // showStreamedEntry puts an entry from the stream where its timestamp belongs, marks it NEW and
@@ -151,14 +170,17 @@
     const wasEmpty = !state.entries.length;
     const index = ChronicleTimeline.insertionIndex(state.entries, entry);
     state.entries.splice(index, 0, entry);
+    markNew([entry.id]); // Before the card is built, which shows the mark.
     let card;
     if (wasEmpty) {
       renderEntries(); card = els.entries.firstElementChild; // The list showed a message, not cards.
     } else {
       card = buildCard(entry); els.entries.insertBefore(card, els.entries.children[index] || null);
     }
-    card.dataset.new = ''; expireNewMark(card);
-    if (state.total !== null) { state.total += 1; showTotal(); }
+    // The total counts every entry, but the stream carries only the entries that match the filters. With
+    // a filter on, the others would never reach the page, so only an unfiltered page grows the total
+    // from the stream. applyFilters reloads the total whenever the filters change.
+    if (state.total !== null && !filtersActive()) { state.total += 1; showTotal(); }
     showResultCount();
     // A card above the viewport pushes the page down, so scroll by its height to keep the reader's place.
     const { top, height } = card.getBoundingClientRect();
@@ -184,10 +206,11 @@
     stream = source;
     source.addEventListener('ready', () => {
       showLiveStatus('live');
+      // After a gap the page missed what was written meanwhile: the list marks it as NEW, and the counts reload.
+      if (interrupted) { state.afterGap = true; loadStats(); }
+      interrupted = false;
       // The server opens its feed before it sends ready, so this list plus the stream covers every entry.
       loadEntries();
-      if (interrupted) loadStats(); // Entries from the gap are in the list now, but not in the counts.
-      interrupted = false;
     });
     source.addEventListener('entry', event => {
       const entry = JSON.parse(event.data);
@@ -201,7 +224,9 @@
   }
 
   // applyFilters shows the first page for the filters as they are now and points the stream at them.
-  function applyFilters() { state.limit = 50; connectStream(); loadEntries(); }
+  // It reloads the stats too: the total follows the stream only while no filter is on, so after a
+  // filtered stretch it is stale, and the tag counts have never followed the stream.
+  function applyFilters() { state.limit = 50; connectStream(); loadEntries(); loadStats(); }
   els.search.addEventListener('input', debounce(applyFilters, 300));
   [els.since, els.until].forEach(input => input.addEventListener('change', applyFilters));
   els.clear.addEventListener('click', () => { els.search.value = ''; els.since.value = ''; els.until.value = ''; state.selectedTags.clear(); renderTagFilters(); applyFilters(); });
