@@ -60,7 +60,7 @@ var webCmd = &cobra.Command{
 			IdleTimeout:       60 * time.Second,
 		}
 		url := browserURL(listener.Addr())
-		fmt.Fprintf(cmd.OutOrStdout(), "Chronicle web interface: %s\nPress Ctrl+C to stop.\n", url)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Chronicle web interface: %s\nPress Ctrl+C to stop.\n", url)
 		if webOpen {
 			go func() { _ = openBrowser(url) }()
 		}

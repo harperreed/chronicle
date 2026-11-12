@@ -261,8 +261,9 @@ func normalizeTags(values []string) []string {
 }
 
 func queryTags(r *http.Request) []string {
-	var values []string
-	for _, value := range r.URL.Query()["tag"] {
+	params := r.URL.Query()["tag"]
+	values := make([]string, 0, len(params))
+	for _, value := range params {
 		values = append(values, strings.Split(value, ",")...)
 	}
 	return normalizeTags(values)
@@ -297,7 +298,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	_ = json.NewEncoder(w).Encode(value) //nolint:errchkjson // The status line is sent already, so a failed encode can't change the response.
 }
 
 func securityHeaders(next http.Handler, allowRemote bool) http.Handler {
