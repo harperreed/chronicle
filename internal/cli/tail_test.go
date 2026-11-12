@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/fatih/color"
 	"github.com/harper/chronicle/internal/storage"
@@ -185,6 +186,58 @@ func TestFormatTailEntryColorsTimePathAndTags(t *testing.T) {
 	wantText := "16:04:43  started work  #spaceport #kata\n          ~/proj\n"
 	if text := ansiEscape.ReplaceAllString(got, ""); text != wantText {
 		t.Errorf("formatTailEntry() without color codes = %q, want %q", text, wantText)
+	}
+}
+
+func TestTailEscapeControls(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"plain text, with non-ASCII letters, is unchanged", "plain, with ünï and 日本語", "plain, with ünï and 日本語"},
+		{"escape sequence", "\x1b[31mred\x1b[0m", `\x1b[31mred\x1b[0m`},
+		{"carriage return at the end", "line\r", `line\r`},
+		{"C1 control", "a\u009bb", `a\u009bb`},
+		{"delete", "a\x7fb", `a\x7fb`},
+		{"other C0 controls", "\x00\a\b\f\v", `\x00\a\b\f\v`},
+		{"tab stays", "a\tb", "a\tb"},
+		{"newline is escaped too", "a\nb", `a\nb`},
+		{"byte that is not UTF-8 shows as the replacement character", "a\x9bb", "a\U0000fffdb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeControls(tt.text); got != tt.want {
+				t.Errorf("escapeControls(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatTailEntryShowsControlCharactersAsEscapes(t *testing.T) {
+	setTailTestColor(t, false)
+	now := time.Date(2026, 11, 11, 18, 0, 0, 0, time.Local)
+	entry := storage.Entry{
+		Timestamp: time.Date(2026, 11, 11, 16, 4, 43, 0, time.Local),
+		// The first line ends in a carriage return, as pasted Windows text does. Sent as it is,
+		// the carriage return moves the cursor to the start of the line, and the tags overwrite
+		// the time.
+		Message:          "pasted\r\n\x1b[31mred\x1b[0m\tkept tab\x1b[2J",
+		Tags:             []string{"ok", "bad\x1b[0m"},
+		WorkingDirectory: "/home/h/\x1b]0;title\x07",
+	}
+
+	want := `16:04:43  pasted\r  #ok #bad\x1b[0m` + "\n" +
+		`          \x1b[31mred\x1b[0m` + "\t" + `kept tab\x1b[2J` + "\n" +
+		`          ~/\x1b]0;title\a` + "\n"
+	got := formatTailEntry(entry, now, "/home/h")
+	if got != want {
+		t.Errorf("formatTailEntry() = %q, want %q", got, want)
+	}
+	// Whatever the entry holds, only the line breaks and the tab are left as control characters.
+	isRawControl := func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' }
+	if strings.IndexFunc(got, isRawControl) >= 0 {
+		t.Errorf("formatTailEntry() = %q still holds a control character", got)
 	}
 }
 

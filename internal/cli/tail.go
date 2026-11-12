@@ -8,9 +8,11 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/fatih/color"
 	"github.com/harper/chronicle/internal/config"
@@ -126,22 +128,24 @@ var (
 // the first line of the message and the tags. Later lines of the message follow, then the working
 // directory, each indented to line up under the message. The time is in now's time zone, and now
 // decides how much of it shows. home is the home folder, which the working directory shortens to "~".
+// Control characters in the message, tags and working directory show as escapes (see escapeControls).
 func formatTailEntry(entry storage.Entry, now time.Time, home string) string {
 	when := tailTimeLabel(entry.Timestamp.In(now.Location()), now)
 	indent := strings.Repeat(" ", len(when)+2)
 	lines := strings.Split(entry.Message, "\n")
 
 	var text strings.Builder
-	fmt.Fprintf(&text, "%s  %s", tailFaintColor.Sprint(when), lines[0])
+	fmt.Fprintf(&text, "%s  %s", tailFaintColor.Sprint(when), escapeControls(lines[0]))
 	if len(entry.Tags) > 0 {
-		fmt.Fprintf(&text, "  %s", tailTagColor.Sprint("#"+strings.Join(entry.Tags, " #")))
+		fmt.Fprintf(&text, "  %s", tailTagColor.Sprint(escapeControls("#"+strings.Join(entry.Tags, " #"))))
 	}
 	text.WriteString("\n")
 	for _, line := range lines[1:] {
-		text.WriteString(indent + line + "\n")
+		text.WriteString(indent + escapeControls(line) + "\n")
 	}
 	if entry.WorkingDirectory != "" {
-		text.WriteString(indent + tailFaintColor.Sprint(abbreviateHome(entry.WorkingDirectory, home)) + "\n")
+		path := escapeControls(abbreviateHome(entry.WorkingDirectory, home))
+		text.WriteString(indent + tailFaintColor.Sprint(path) + "\n")
 	}
 	return text.String()
 }
@@ -157,6 +161,25 @@ func tailTimeLabel(at, now time.Time) string {
 	default:
 		return at.Format("15:04:05")
 	}
+}
+
+// escapeControls returns text with each control character except the tab written as its Go escape,
+// such as \x1b for ESC, \r for a carriage return and \u009b for a C1 control. Entries come from
+// other programs, and a raw control character could send commands to the terminal or move its
+// cursor. A byte that is not valid UTF-8 shows as U+FFFD, since a terminal in a legacy mode could
+// read a lone byte such as 0x9b as a control character too.
+func escapeControls(text string) string {
+	var escaped strings.Builder
+	escaped.Grow(len(text))
+	for _, r := range text {
+		if r == '\t' || !unicode.IsControl(r) {
+			escaped.WriteRune(r)
+			continue
+		}
+		quoted := strconv.QuoteRune(r) // For example '\x1b', with the quotes.
+		escaped.WriteString(quoted[1 : len(quoted)-1])
+	}
+	return escaped.String()
 }
 
 // abbreviateHome writes a path inside the home folder with "~" in place of the folder. A path
