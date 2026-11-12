@@ -442,11 +442,14 @@ func (s *SqliteStore) ListEntries(limit int) ([]Entry, error) {
 	return s.SearchEntries(nil, limit)
 }
 
-// SearchEntries returns entries matching the filter.
+// sqliteEntryQuery returns a SELECT of the entries that match the filter, ending after its
+// WHERE clause so the caller adds the ordering, and the arguments for its placeholders. Every
+// query for filtered entries is built here, so a feed reports an entry exactly when a reload
+// would show it. Each condition in extra, which may use the alias e for the entries table, is
+// ANDed in after the filter's own, and extraArgs holds the arguments for its placeholders.
 //
 //nolint:gocognit,gocyclo,nestif // Complex but straightforward query building logic
-func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) {
-	var entries []Entry
+func sqliteEntryQuery(filter *SearchFilter, extra []string, extraArgs ...interface{}) (string, []interface{}) {
 	var args []interface{}
 
 	// Build query
@@ -490,6 +493,9 @@ func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, e
 		}
 	}
 
+	conditions = append(conditions, extra...)
+	args = append(args, extraArgs...)
+
 	if len(conditions) > 0 {
 		conditionPrefix := " WHERE "
 		if filter != nil && filter.Text != "" {
@@ -497,6 +503,13 @@ func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, e
 		}
 		query = strings.Join([]string{query, conditionPrefix, strings.Join(conditions, " AND ")}, "")
 	}
+
+	return query, args
+}
+
+// SearchEntries returns entries matching the filter.
+func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, error) {
+	query, args := sqliteEntryQuery(filter, nil)
 
 	// Order and limit
 	query += " ORDER BY (e.timestamp_unix_seconds IS NULL OR e.timestamp_nanosecond IS NULL), e.timestamp_unix_seconds DESC, e.timestamp_nanosecond DESC"
@@ -511,6 +524,16 @@ func (s *SqliteStore) SearchEntries(filter *SearchFilter, limit int) ([]Entry, e
 	}
 	defer func() { _ = rows.Close() }()
 
+	return scanEntryRows(rows)
+}
+
+// scanEntryRows reads every row of a query that selects the columns scanEntry reads. A timestamp
+// that doesn't parse becomes the current time and tags that don't parse become nil, so one
+// damaged row doesn't hide the rest. SearchEntries and the feed both read their rows here, so
+// they return the same entry for the same row.
+func scanEntryRows(rows *sql.Rows) ([]Entry, error) {
+	var entries []Entry
+	var err error
 	for rows.Next() {
 		entry, timestamp, tagsJSON, scanErr := scanEntry(rows)
 		if scanErr != nil {
