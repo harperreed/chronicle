@@ -162,6 +162,17 @@
     scheduleSweep();
   });
 
+  // The browser scrolls whole pixels but a card's height is not whole, so scrolling by a card's height
+  // ends a fraction of a pixel off. scrollShortfall carries that fraction into the next scroll, so a
+  // burst of entries above the reader doesn't slide the page a little further with each one.
+  let scrollShortfall = 0;
+  function scrollDown(distance) {
+    const wanted = distance + scrollShortfall; const from = window.scrollY;
+    window.scrollBy(0, wanted);
+    // A gap of more than a pixel means the scroll was held back, and carrying that would only pile up.
+    scrollShortfall = Math.max(-1, Math.min(1, wanted - (window.scrollY - from)));
+  }
+
   // showStreamedEntry puts an entry from the stream where its timestamp belongs, marks it NEW and
   // counts it. The list can hold the entry already: a list request that the server answered after
   // the entry was written has it too.
@@ -184,7 +195,7 @@
     showResultCount();
     // A card above the viewport pushes the page down, so scroll by its height to keep the reader's place.
     const { top, height } = card.getBoundingClientRect();
-    if (top < 0) window.scrollBy(0, height);
+    if (top < 0) scrollDown(height); else scrollShortfall = 0;
   }
 
   // The stream delivers the entries written after it opened, filtered like the list. At most one
